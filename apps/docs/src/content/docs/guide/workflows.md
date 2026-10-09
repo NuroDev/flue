@@ -1,7 +1,7 @@
 ---
 title: Workflows
 description: Driving agents from programs — one-shot CLI runs and CI jobs, standalone scripts, the SDK, and durable workflows.
-lastReviewedAt: 2026-07-21
+lastReviewedAt: 2026-10-09
 ---
 
 In Flue, a workflow is any script or program that runs an agent. Workflows are not a Flue feature per se — they are just a useful pattern we've found for referring to all of the different ways that you might use Flue to build scripted automations outside of the usual deployed "chatbot" agent experience.
@@ -147,7 +147,7 @@ export class NightlyReview extends WorkflowEntrypoint {
 }
 ```
 
-The class is exported from [`src/cloudflare.ts`](/docs/guide/cloudflare-target/#extending-cloudflarets-entrypoint), with its workflow binding declared in `wrangler.jsonc`. See the [Cloudflare target guide](/docs/guide/cloudflare-target/) for the rest of the platform details.
+The class is exported from [`src/cloudflare.ts`](/docs/guide/cloudflare-target/#extending-cloudflarets-entrypoint), with its workflow binding declared in `cloudflare.config.ts`. See the [Cloudflare target guide](/docs/guide/cloudflare-target/) for the rest of the platform details.
 
 ### Example: Inngest
 

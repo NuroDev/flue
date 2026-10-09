@@ -1,7 +1,7 @@
 ---
 title: Models
 description: Choose, tune, and connect the LLM that powers your agent with the useModel hook.
-lastReviewedAt: 2026-07-21
+lastReviewedAt: 2026-10-09
 ---
 
 Every agent is powered by exactly one LLM at a time, declared with `useModel()` — the single required hook in Flue. This guide covers choosing a model, tuning how it's called, when a change takes effect, supplying provider credentials, and connecting providers Flue doesn't know out of the box.
@@ -146,7 +146,7 @@ Don't commit `.env` files.
 Deployed servers read only the real environment — no `.env` loading:
 
 - **Node.js** — supply keys as process environment variables through your host's secret mechanism. See [Node.js target — Environment and secrets](/docs/guide/node-target/#environment-and-secrets).
-- **Cloudflare** — add each key as a Worker secret (`npx wrangler secret put ANTHROPIC_API_KEY`); locally, `.dev.vars` plays the `.env` role. See the [Cloudflare deploy guide](/docs/ecosystem/deploy/cloudflare/).
+- **Cloudflare** — add each key as a Worker secret (`npx cf deploy --secrets-file .dev.vars`); locally, `.dev.vars` plays the `.env` role. See the [Cloudflare deploy guide](/docs/ecosystem/deploy/cloudflare/).
 
 When the environment-variable convention doesn't fit — a gateway with its own credential, a secret manager that hands you the value in code — declare the credential on a [custom provider](#custom-providers): a provider's `auth.apiKey.resolve()` returns whatever your code produces, and it runs per request, so rotating credentials work too.
 
@@ -229,15 +229,22 @@ export function Assistant() {
 }
 ```
 
-Declare the `AI` binding the provider uses in your project's Wrangler configuration:
+Declare the `AI` binding the provider uses in your project's Cloudflare configuration:
 
-```jsonc title="wrangler.jsonc"
-{
-  "$schema": "./node_modules/wrangler/config-schema.json",
-  "ai": {
-    "binding": "AI",
+```ts title="cloudflare.config.ts"
+import flue from '@flue/vite/cloudflare/config';
+import { bindings, defineConfig } from 'cf/config';
+
+export default defineConfig({
+  worker: {
+    name: 'my-flue-worker',
+    exports: { ...flue.exports },
+    compatibilityDate: '2026-10-01',
+    env: {
+      AI: bindings.ai(),
+    },
   },
-}
+});
 ```
 
 Everything after `cloudflare/` is passed as the model ID to `env.AI.run(...)`. That can be a Workers AI model ID such as `@cf/moonshotai/kimi-k2.6`, or a binding-supported AI Gateway model ID such as `openai/gpt-5.5` when the Worker should reach that model through Cloudflare's gateway path — `cloudflare/openai/gpt-5.5` bills through Cloudflare, while plain `openai/gpt-5.5` uses Flue's direct OpenAI provider and its API key.

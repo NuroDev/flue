@@ -23,14 +23,14 @@ first-class **build target**, not a drop-in adapter file.
 
 If the user is already on the Cloudflare target: there is no project-owned
 adapter file to install. Export the Sandbox class from the selected Flue source
-root's `cloudflare.ts`, declare the binding in `wrangler.jsonc`, and wrap
+root's `cloudflare.ts`, declare the binding in `cloudflare.config.ts`, and wrap
 `getSandbox(env.Sandbox, id)` with `cloudflareSandbox(...)` in the agent. Skip to
 ["Path A"](#path-a-already-on-the-cloudflare-target) below.
 
 If the user is on the Node target (or hasn't picked yet): adding Cloudflare
 Sandbox means **migrating the entire project to deploy on Cloudflare
 Workers**. This is a real, multi-step change — Workers, Durable Objects,
-`wrangler`, container builds, the lot. Don't pretend it's a single-file
+`cf`, container builds, the lot. Don't pretend it's a single-file
 add. Skip to ["Path B"](#path-b-currently-on-the-node-target) and
 **confirm with the user before proceeding**.
 
@@ -49,14 +49,14 @@ current target:
    `target: 'cloudflare'`. Either is a strong signal they're on Cloudflare
    already. (Scripts don't distinguish targets — dev and build are
    `vite dev` / `vite build` on both.)
-2. Check for `wrangler.jsonc` / `wrangler.toml` / `wrangler.json` at the
+2. Check for `cloudflare.config.ts` at the
    project root. Cloudflare-targeted Flue projects always have one.
-3. Check `package.json` for `wrangler`, `agents`, and
+3. Check `package.json` for `cf`, `agents`, and
    `@cloudflare/vite-plugin`.
 
 If you find clear evidence of the Cloudflare target: **Path A**.
 
-If you find no Cloudflare wiring (no `wrangler.jsonc`, no `wrangler` dep,
+If you find no Cloudflare wiring (no `cloudflare.config.ts`, no `cf` dep,
 no `cloudflare()` plugin in `vite.config.ts`): **Path B** — and
 **confirm with the user that they want to migrate** before doing anything.
 
@@ -92,25 +92,39 @@ The short version, for your reference:
    ```
 
 3. Add a Durable Object binding for the sandbox to the user's
-   `wrangler.jsonc` at the project root:
+   `cloudflare.config.ts` at the project root:
 
-   ```jsonc
-   {
-     "durable_objects": {
-       "bindings": [{ "class_name": "Sandbox", "name": "Sandbox" }]
+   ```ts
+   import flue from '@flue/vite/cloudflare/config';
+   import { bindings, defineConfig, defineContainer, exports } from 'cf/config';
+
+   const sandbox = defineContainer({
+     name: 'agent-sandbox',
+     image: { dockerfile: './Dockerfile' },
+   });
+
+   export default defineConfig({
+     worker: {
+       name: 'my-flue-worker',
+       compatibilityDate: '2026-06-01',
+       env: {
+         Sandbox: bindings.durableObject({
+           worker: 'my-flue-worker',
+           exportName: 'Sandbox',
+         }),
+       },
+       exports: {
+         ...flue.exports,
+         Sandbox: exports.durableObject({ storage: 'sqlite', container: sandbox }),
+       },
      },
-     "migrations": [{ "tag": "v2", "new_sqlite_classes": ["Sandbox"] }],
-     "containers": [{ "class_name": "Sandbox", "image": "./Dockerfile" }]
-   }
+     containers: [sandbox],
+   });
    ```
 
-   Preserve the user's existing top-level migration history and append a new
-   uniquely tagged entry. Do not replace deployed migration entries — in
-   particular the per-agent `flue-class-Flue<PascalName>Agent` entries for
-   the generated agent Durable Object classes. (`wrangler.jsonc` stays
-   user-owned; Flue's own contributions — the Worker entry and per-agent
-   Durable Object bindings — are applied in memory by the
-   `flueWorkerConfig()` customizer passed to the Cloudflare Vite plugin.)
+   Merge these resources into the user's existing config. Preserve deployed
+   rename and deletion declarations after `...flue.exports`. Flue's entrypoint,
+   bindings, and flags are supplied by `flueWorkerConfig()`.
 
 4. Add a `Dockerfile` at the project root pinned to the matching
    `@cloudflare/sandbox` version:
@@ -123,7 +137,7 @@ The short version, for your reference:
    1 — Cloudflare publishes the base image with the same version tag as
    the npm package.)
 
-5. Use it in an agent. The binding name from `wrangler.jsonc` (`Sandbox`
+5. Use it in an agent. The binding name from `cloudflare.config.ts` (`Sandbox`
    above) is the key on `env`. `cloudflareSandbox(getSandbox(env.Sandbox, id))`
    needs this Worker's `env` bindings and the agent's instance id, both of
    which are only available where your application already has request/DO
@@ -155,10 +169,10 @@ The short version, for your reference:
    endpoint.
 
 6. Tell the user to put local variables in `.dev.vars` or `.env` and run
-   `vite dev` for local development, then `vite build &&
-   wrangler deploy --secrets-file .env` to deploy. No new env vars are required just for
+   `cf dev` for local development, then
+   `cf deploy --secrets-file .env` to deploy. No new env vars are required just for
    the sandbox itself; auth is the user's normal Cloudflare account auth
-   via `wrangler login`.
+   via `cf auth login`.
 
 If the user wants multiple sandbox images (e.g. one for Python, one for
 Node), they can declare multiple bindings — see the "Multiple sandboxes"
@@ -180,14 +194,13 @@ Cloudflare Workers, which is a substantial migration that includes:
   `@cloudflare/vite-plugin`, the customizer from `@flue/vite`) to
   `vite.config.ts` after `flue()` — that plugin's presence is what selects
   the Cloudflare target; dev and build stay `vite dev` / `vite build`.
-- Adding `wrangler`, `@cloudflare/vite-plugin`, and `agents` (Cloudflare's
-  Agents SDK) as dependencies.
-- Adding a `wrangler.jsonc` with Durable Object bindings, container
-  bindings, user-authored migration entries for each agent's generated
-  `Flue<PascalName>Agent` class, and an R2 binding if they want persistent
+- Adding `cf` and `@cloudflare/vite-plugin@beta` as dev dependencies.
+  Flue already includes the Cloudflare Agents SDK.
+- Adding a `cloudflare.config.ts` with Durable Object bindings, container
+  bindings, `...flue.exports` for automatically discovered agent classes, and an R2 binding if they want persistent
   file storage.
 - Adding a `Dockerfile` for the container image.
-- Setting up Wrangler authentication (`wrangler login`) and a Cloudflare
+- Setting up Cloudflare authentication (`cf auth login`) and a Cloudflare
   account that has Containers enabled (currently a Workers Paid feature).
 - Reviewing any Node-only code in the user's existing agents and
   adapters. Anything that imports from `node:fs`, opens TCP sockets via
@@ -224,14 +237,14 @@ That document walks through the migration end-to-end:
 
 - Hello-world agent on Cloudflare (`vite dev` with the `cloudflare()`
   plugin in `vite.config.ts`).
-- Adding `wrangler.jsonc`, `.env`, and the `cloudflare()` plugin to
+- Adding `cloudflare.config.ts`, `.env`, and the `cloudflare()` plugin to
   `vite.config.ts`.
 - Using Flue's default virtual sandbox if the user only needs an in-memory filesystem with built-in shell and file-search tools.
 - Adding the Cloudflare Sandbox container at the end (which is the same
   blueprint as Path A above).
 
 Read the guide, then walk the user through it section by section. Don't
-short-circuit straight to writing a `wrangler.jsonc` and `Dockerfile`
+short-circuit straight to writing a `cloudflare.config.ts` and `Dockerfile`
 without first confirming the basics work on the Cloudflare target.
 
 ---
@@ -244,7 +257,7 @@ without first confirming the basics work on the Cloudflare target.
 - **Do not** silently migrate a Node-target project to Cloudflare. Always
   confirm first.
 - **Do not** invent a Cloudflare account, API token, or `account_id`. The
-  user authenticates with `wrangler login` (or `CLOUDFLARE_API_TOKEN` in
+  user authenticates with `cf auth login` (or `CLOUDFLARE_API_TOKEN` in
   CI); never guess values.
 - **Do not** pin the `cloudflare/sandbox:<version>` Docker tag to a
   version different from the `@cloudflare/sandbox` npm package version

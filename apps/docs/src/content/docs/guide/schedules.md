@@ -1,7 +1,7 @@
 ---
 title: Schedules
 description: Deliver input to your agents on a cron schedule, on Node.js and Cloudflare.
-lastReviewedAt: 2026-07-21
+lastReviewedAt: 2026-10-09
 ---
 
 A schedule delivers agent input at a fixed cadence: a cron trigger fires, and your code calls [`dispatch(...)`](/docs/guide/building-agents/#dispatch) with a message for an agent conversation. Flue has no scheduler of its own — each target pairs its cron mechanism with the same dispatch surface every other delivery uses. This guide covers declaring a schedule on Node.js and Cloudflare, the message a fire delivers, choosing the conversation id, awaiting a run's result, and the operational behavior around missed fires, overlap, and durability.
@@ -71,14 +71,24 @@ A runnable version of this pattern is available in [`examples/node-schedules`](h
 
 ## Scheduling on Cloudflare
 
-On the Cloudflare target, the Worker is not a long-lived process, so the platform owns the trigger. Declare the cadence as a [Cron Trigger](https://developers.cloudflare.com/workers/configuration/cron-triggers/) in `wrangler.jsonc`:
+On the Cloudflare target, the Worker is not a long-lived process, so the platform owns the trigger. Declare the cadence as a [Cron Trigger](https://developers.cloudflare.com/workers/configuration/cron-triggers/) in `cloudflare.config.ts`:
 
-```jsonc title="wrangler.jsonc"
-{
-  "triggers": {
-    "crons": ["0 9 * * *"],
+```ts title="cloudflare.config.ts"
+import flue from '@flue/vite/cloudflare/config';
+import { defineConfig, triggers } from 'cf/config';
+
+export default defineConfig({
+  worker: {
+    name: 'my-flue-worker',
+    exports: { ...flue.exports },
+    compatibilityDate: '2026-10-01',
+    triggers: [
+      triggers.scheduled({
+        schedule: '0 9 * * *',
+      }),
+    ],
   },
-}
+});
 ```
 
 Cloudflare evaluates cron expressions in **UTC**; there is no timezone option.
