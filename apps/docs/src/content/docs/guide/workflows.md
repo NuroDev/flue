@@ -147,7 +147,7 @@ export class NightlyReview extends WorkflowEntrypoint {
 }
 ```
 
-The class is exported from [`src/cloudflare.ts`](/docs/guide/cloudflare-target/#extending-cloudflarets-entrypoint), with its workflow binding declared in `wrangler.jsonc`. See the [Cloudflare target guide](/docs/guide/cloudflare-target/) for the rest of the platform details.
+The class is exported from [`src/cloudflare.ts`](/docs/guide/cloudflare-target/#extending-cloudflarets-entrypoint), with its workflow binding declared in `cloudflare.config.ts`. See the [Cloudflare target guide](/docs/guide/cloudflare-target/) for the rest of the platform details.
 
 ### Example: Inngest
 

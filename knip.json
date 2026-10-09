@@ -15,7 +15,7 @@
 		},
 		"examples/*": {
 			"entry": [
-				"{src/{app,db,cloudflare,agents/*,channels/*},flue.config,vite.config,vite.config.cloudflare,vite.config.ui}.{ts,mts,js,mjs}"
+				"{src/{app,db,cloudflare,agents/*,channels/*},flue.config,cloudflare.config,vite.config,vite.config.cloudflare,vite.config.ui}.{ts,mts,js,mjs}"
 			],
 			"project": ["src/**/*.{ts,mts,js,mjs}"]
 		},
@@ -36,7 +36,7 @@
 			"ignoreDependencies": ["@hono/node-server"]
 		},
 		"packages/vite": {
-			"ignoreDependencies": ["@earendil-works/pi-ai"]
+			"ignoreDependencies": ["@earendil-works/pi-ai", "cf"]
 		}
 	}
 }

@@ -3,9 +3,9 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "vite dev",
-		"build": "vite build",
-		"deploy": "vite build && wrangler deploy"
+		"dev": "cf dev",
+		"build": "cf build",
+		"deploy": "cf deploy"
 	},
 	"dependencies": {
 		"@cloudflare/computer": "^0.1.1",
@@ -15,11 +15,11 @@
 		"valibot": "^1.0.0"
 	},
 	"devDependencies": {
-		"@cloudflare/vite-plugin": "^1.39.2",
+		"@cloudflare/vite-plugin": "2.0.0-beta.sha-91c870c02",
 		"@cloudflare/workers-types": "^5.20260721.1",
 		"@flue/cli": "workspace:*",
 		"@flue/vite": "workspace:*",
 		"vite": "^8.0.14",
-		"wrangler": "^4.113.0"
+		"cf": "1.0.0-beta.13"
 	}
 }

@@ -39,6 +39,7 @@ vitest-results.json
 
 # temporary test fixtures (@flue/vite integration tests)
 packages/vite/test/.tmp/
+packages/vite/tests/.tmp-cf-*/
 
 # wrangler generated types
 worker-configuration.d.ts
@@ -54,3 +55,6 @@ corporate-ca.pem
 
 # legacy code (kept locally for reference, not pushed)
 legacy/
+
+# cf build output, generated types, and local resource state
+.cloudflare/

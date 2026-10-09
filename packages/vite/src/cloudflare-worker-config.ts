@@ -11,23 +11,12 @@
  * });
  * ```
  *
- * The sibling plugin owns the wrangler config end to end: it reads the
- * user's authored `wrangler.jsonc` (its `configPath`), resolves the active
- * Cloudflare environment, invokes this customizer on the resolved config,
- * and emits the merged deploy config into the build output. Flue never
- * reads, merges, or writes a wrangler config file. The customizer
- * contributes only what Flue derives at config-resolution time:
- *
- *   - `main` → `virtual:flue/worker`, the generated Worker entry served by
- *     the `flue()` plugin (left alone when the user set their own `main`);
- *   - one Durable Object binding per scanned `'use agent'` agent;
- *   - the `nodejs_compat` compatibility flag (unioned in);
- *   - validation of a user-set `compatibility_date` against Flue's floor.
- *
- * Everything else — user Durable Object bindings, containers, R2 buckets,
- * and the complete migration history — belongs to the user's own
- * `wrangler.jsonc` and passes through untouched (adding an agent = file +
- * mount + migration tag).
+ * The sibling plugin owns Cloudflare config loading, mode resolution, and
+ * build output. With its 2.0 beta it reads `cloudflare.config.ts` and passes
+ * a camelCase Worker config. The 1.x Wrangler customizer remains supported.
+ * Flue contributes a virtual entrypoint, per-agent Durable Object bindings,
+ * nodejs_compat, and compatibility-date validation. Lifecycle declarations
+ * (`worker.exports`, or legacy migrations) remain user-owned.
  *
  * Linkage: `vite.config.ts` is re-evaluated per Vite config resolution, so
  * `flue()` and `flueWorkerConfig()` are fresh instances each resolution.
@@ -156,7 +145,7 @@ export function cloudflareOrderingError(): Error {
 
 /**
  * Mutate the sibling's resolved worker config in place. The sibling resolves
- * the active Cloudflare environment (`CLOUDFLARE_ENV`) before invoking the
+ * the active Cloudflare mode (or legacy `CLOUDFLARE_ENV`) before invoking the
  * customizer, so this always sees — and every contribution lands in — the
  * effective config for the environment actually being built or served.
  */
@@ -164,6 +153,10 @@ function applyFlueWorkerConfig(
 	config: Record<string, unknown>,
 	doBindings: readonly FlueDoBinding[],
 ): void {
+	if ('compatibilityDate' in config) {
+		applyProgrammaticWorkerConfig(config, doBindings);
+		return;
+	}
 	validateCompatibilityDate(config);
 
 	// compatibility_flags: union in nodejs_compat. The deploy artifact is the
@@ -191,6 +184,49 @@ function applyFlueWorkerConfig(
 	// every other field pass through untouched.
 }
 
+function applyProgrammaticWorkerConfig(
+	config: Record<string, unknown>,
+	doBindings: readonly FlueDoBinding[],
+): void {
+	validateCompatibilityDate(config, 'compatibilityDate');
+	const flags = (config.compatibilityFlags as string[] | undefined) ?? [];
+	config.compatibilityFlags = flags.includes(REQUIRED_COMPAT_FLAG)
+		? flags
+		: [...flags, REQUIRED_COMPAT_FLAG];
+	config.entrypoint ??= VIRTUAL_WORKER_ENTRY;
+
+	const env = (config.env as Record<string, unknown> | undefined) ?? {};
+	for (const binding of doBindings) {
+		const existing = env[binding.name];
+		if (existing !== undefined) {
+			if (
+				typeof existing !== 'object' ||
+				existing === null ||
+				!('type' in existing) ||
+				existing.type !== 'durable-object' ||
+				!('worker' in existing) ||
+				existing.worker !== config.name ||
+				!('exportName' in existing) ||
+				existing.exportName !== binding.class_name
+			) {
+				throw stackless(
+					new Error(
+						`[flue] Cloudflare binding "${binding.name}" is reserved by Flue. ` +
+							`Expected a durable-object binding to "${binding.class_name}" in Worker "${config.name}".`,
+					),
+				);
+			}
+			continue;
+		}
+		env[binding.name] = {
+			exportName: binding.class_name,
+			type: 'durable-object',
+			worker: config.name,
+		};
+	}
+	config.env = env;
+}
+
 /**
  * Enforce Flue's compatibility_date floor on a user-set value. We're
  * intentionally strict rather than silently bumping the date — the failure
@@ -198,20 +234,23 @@ function applyFlueWorkerConfig(
  * AsyncLocalStorage) produce confusing runtime errors, and a user pins a
  * date deliberately.
  */
-function validateCompatibilityDate(config: Record<string, unknown>): void {
-	if (typeof config.compatibility_date !== 'string') return;
-	const userDate = config.compatibility_date;
+function validateCompatibilityDate(
+	config: Record<string, unknown>,
+	field = 'compatibility_date',
+): void {
+	const userDate = config[field];
+	if (typeof userDate !== 'string') return;
 	if (!/^\d{4}-\d{2}-\d{2}$/.test(userDate)) {
 		throw stackless(
 			new Error(
-				`[flue] Your wrangler config's "compatibility_date" ("${userDate}") is not in YYYY-MM-DD format.`,
+				`[flue] Your Cloudflare config's "${field}" ("${userDate}") is not in YYYY-MM-DD format.`,
 			),
 		);
 	}
 	if (userDate < MIN_COMPATIBILITY_DATE) {
 		throw stackless(
 			new Error(
-				`[flue] Your wrangler config's "compatibility_date" is "${userDate}". ` +
+				`[flue] Your Cloudflare config's "${field}" is "${userDate}". ` +
 					`Flue requires at least "${MIN_COMPATIBILITY_DATE}" for SQLite-backed Durable Object support, nodejs_compat v2, and AsyncLocalStorage. ` +
 					`Bump the date (set it to today unless you have a specific reason).`,
 			),

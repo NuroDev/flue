@@ -18,13 +18,21 @@ flue add sandbox cloudflare-computer
 
 ## Overview
 
-The blueprint creates the adapter at `<source-root>/sandboxes/cloudflare-computer.ts`. Shell commands don't run in your Worker: the adapter mints a Dynamic Worker through a [Worker Loader](https://developers.cloudflare.com/workers/runtime-apis/bindings/worker-loader/) binding and runs just-bash there, against the durable filesystem. That binding — currently beta-gated, so your Cloudflare account needs access — and the `experimental` compatibility flag its Dynamic Worker requires are the two Wrangler additions; there are no API keys or environment variables:
+The blueprint creates the adapter at `<source-root>/sandboxes/cloudflare-computer.ts`. Shell commands don't run in your Worker: the adapter mints a Dynamic Worker through a [Worker Loader](https://developers.cloudflare.com/workers/runtime-apis/bindings/worker-loader/) binding and runs just-bash there, against the durable filesystem. That binding — currently beta-gated, so your Cloudflare account needs access — and the `experimental` compatibility flag its Dynamic Worker requires are the two config additions; there are no API keys or environment variables:
 
-```jsonc title="wrangler.jsonc"
-{
-  "compatibility_flags": ["nodejs_compat", "experimental"],
-  "worker_loaders": [{ "binding": "LOADER" }],
-}
+```ts title="cloudflare.config.ts"
+import { bindings, defineConfig } from 'cf/config';
+
+export default defineConfig({
+  worker: {
+    name: 'my-flue-worker',
+    compatibilityDate: '2026-06-01',
+    compatibilityFlags: ['nodejs_compat', 'experimental'],
+    env: {
+      LOADER: bindings.workerLoader(),
+    },
+  },
+});
 ```
 
 Two one-line re-exports complete the wiring: the project's `cloudflare.ts` re-exports `WorkspaceServiceProxy` (the loopback the shell dials back through), and each sandbox-using agent module re-exports the generated `workspaceHost` extension so its Durable Object hosts the workspace.

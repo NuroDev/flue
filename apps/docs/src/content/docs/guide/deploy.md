@@ -69,27 +69,25 @@ For runtime details — state and durability, process ownership, multi-replica r
 
 ## Deploy on Cloudflare
 
-On Cloudflare, `flue()` cooperates with the official `@cloudflare/vite-plugin`, which owns workerd dev, build output, preview, and deploy. `flue()` must come **before** `cloudflare()` in the plugins array; the wrong order is diagnosed with an error. Flue's job is generating the Worker inputs the Cloudflare plugin consumes: a Worker entry that registers your scanned agents and exports one Durable Object class per agent, plus your authored `wrangler.jsonc` merged with the generated bindings. Add both generated paths to `.gitignore`:
+On Cloudflare, `flue()` cooperates with `@cloudflare/vite-plugin@beta` and the `cf` CLI. Keep `flue()` before `cloudflare({ config: flueWorkerConfig() })` in the plugins array. The Cloudflare plugin loads `cloudflare.config.ts`; Flue contributes a virtual Worker entry, `nodejs_compat`, and per-agent Durable Object bindings.
 
-```gitignore
-.flue-vite/
-.flue-vite.wrangler.jsonc
+```ts title="cloudflare.config.ts"
+import { defineConfig, exports } from 'cf/config';
+
+export default defineConfig({
+  worker: {
+    name: 'my-flue-worker',
+    compatibilityDate: '2026-06-01',
+    exports: {
+      FlueTriageAgent: exports.durableObject({ storage: 'sqlite' }),
+    },
+  },
+});
 ```
 
-Two things stay yours to author in `wrangler.jsonc`: the `nodejs_compat` compatibility flag, and the **Durable Object migrations** — an append-only record of your deployments that Flue never writes. Every deployed agent needs a migration entry for its generated class, so adding an agent is always a triple: the agent, its mount in `app.ts` (skip for dispatch-only agents), and a new migration tag:
+Declare each agent class in `worker.exports`. Renames and deletions use lifecycle tombstones; see [Managing migrations](/docs/guide/cloudflare-target/#managing-migrations). Existing Wrangler projects should run `cf migrate` before using project commands.
 
-```jsonc title="wrangler.jsonc"
-{
-  "name": "my-flue-worker",
-  "compatibility_date": "2026-06-01",
-  "compatibility_flags": ["nodejs_compat"],
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["FlueTriageAgent"] }],
-}
-```
-
-Renaming or removing a deployed agent is a storage migration too (`renamed_classes` / `deleted_classes`) — read [Managing migrations](/docs/guide/cloudflare-target/#managing-migrations) before changing anything already deployed.
-
-Build and deploy through the Cloudflare plugin: `vite build`, then deploy against the config it emits into `dist/`. For the full walkthrough, see [Deploy Agents on Cloudflare](/docs/ecosystem/deploy/cloudflare/); for runtime behavior — generated classes and bindings, durable execution, service bindings — see the [Cloudflare target guide](/docs/guide/cloudflare-target/).
+Add `.cloudflare/` to `.gitignore`. Develop with `cf dev`, validate with `cf build`, and build and deploy with `cf deploy`. To deploy a prebuilt production artifact, use `cf deploy --prebuilt --mode production`. For the full walkthrough, see [Deploy Agents on Cloudflare](/docs/ecosystem/deploy/cloudflare/).
 
 ## Next steps
 

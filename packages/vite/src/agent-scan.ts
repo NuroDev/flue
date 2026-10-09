@@ -54,7 +54,12 @@ const DEFAULT_SCAN_PATTERNS = ['**/*.{ts,mts,js,mjs}'];
  * explicitly so an `agents` override with `dot: true` semantics can never
  * resurrect them.
  */
-const EXCLUDED_DIRECTORY_PATTERNS = ['**/node_modules/**', '**/dist/**', '**/.wrangler/**'];
+const EXCLUDED_DIRECTORY_PATTERNS = [
+	'**/node_modules/**',
+	'**/dist/**',
+	'**/.wrangler/**',
+	'**/.cloudflare/**',
+];
 
 export interface ScanAgentsOptions {
 	/** Absolute path to the project source root the scan runs over. */

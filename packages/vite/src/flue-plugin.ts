@@ -18,7 +18,7 @@
  * flueWorkerConfig() })` and `flue()` must precede `cloudflare()` in the
  * plugin array: the sibling's `config` hook invokes Flue's worker-config
  * customizer (see cloudflare-worker-config.ts), which needs flue's completed
- * project resolution and agent scan. The sibling owns the wrangler config,
+ * project resolution and agent scan. The sibling owns the Cloudflare config,
  * workerd dev, build output, and preview.
  *
  * Virtual modules (resolved only inside graphs this plugin serves):
@@ -27,8 +27,8 @@
  * - `virtual:flue/db`     → the resolved db entry, or a default-adapter stub
  * - `virtual:flue/agents` → the scanned `'use agent'` module set
  * - `virtual:flue/server` → the Node bootstrap (real code in this package)
- * - `virtual:flue/worker` → the generated Cloudflare Worker entry (wrangler
- *   `main`; per-agent Durable Object classes)
+ * - `virtual:flue/worker` → the generated Cloudflare Worker entry
+ *   (`entrypoint`, or legacy `main`; per-agent Durable Object classes)
  */
 import * as fs from 'node:fs';
 import { builtinModules } from 'node:module';
@@ -148,8 +148,13 @@ const ENFORCED_DEV_CONFIG_PATHS = ['appType'];
 /** Chrome probes this on every DevTools open; it must never reach user routes. */
 const CHROME_DEVTOOLS_PROBE_PATH = '/.well-known/appspecific/com.chrome.devtools.json';
 
-/** Authored wrangler config basenames the sibling plugin discovers at the root. */
-const AUTHORED_WRANGLER_BASENAMES = ['wrangler.jsonc', 'wrangler.json', 'wrangler.toml'];
+/** Authored Cloudflare config basenames the sibling plugin discovers at the root. */
+const AUTHORED_CLOUDFLARE_BASENAMES = [
+	'cloudflare.config.ts',
+	'wrangler.jsonc',
+	'wrangler.json',
+	'wrangler.toml',
+];
 
 /**
  * Dev-server CORS defaults: allow credentialed requests from localhost-family
@@ -341,7 +346,7 @@ export function flue(config: FlueConfig = {}): Plugin[] {
 
 			if (preliminaryTarget === 'cloudflare') {
 				// The sibling plugin resolves its configuration in ITS `config`
-				// hook — reading the user's wrangler config and invoking Flue's
+				// hook, reading the user's Cloudflare config and invoking Flue's
 				// worker-config customizer — which runs after this one only when
 				// flue() precedes cloudflare() in the plugin array. Diagnose the
 				// wrong order here, before the customizer could run against an
@@ -542,8 +547,8 @@ export function flue(config: FlueConfig = {}): Plugin[] {
 				return generateProvidersModule(state.project?.providers);
 			}
 			if (id === RESOLVED_WORKER_ENTRY) {
-				// The Cloudflare Worker entry. The sibling plugin points wrangler
-				// `main` here (via flueWorkerConfig()) and resolves it through
+				// The sibling plugin points the Cloudflare Worker entrypoint
+				// here (via flueWorkerConfig()) and resolves it through
 				// Vite's plugin pipeline in both dev and build; bare imports in
 				// the generated code resolve against the user's project root.
 				const app = state.project?.app;
@@ -725,8 +730,8 @@ export function flue(config: FlueConfig = {}): Plugin[] {
 
 /**
  * Cloudflare dev supervision. The sibling plugin runs workerd, serves the
- * app, and owns the wrangler config end to end — it watches the user's
- * authored wrangler file (its `configPath`) and restarts itself on edits.
+ * app, and owns the Cloudflare config end to end. It watches the authored
+ * config and its imports and restarts itself on edits.
  * Flue's only dev job is reacting to structural project changes:
  *
  * - A changed agent set (agent file add/remove, directive change, identity
@@ -735,7 +740,7 @@ export function flue(config: FlueConfig = {}): Plugin[] {
  *   hook (fresh scan) and the sibling's config resolution, which re-invokes
  *   `flueWorkerConfig()` with the new Durable Object bindings and Worker
  *   entry — the same treatment the sibling gives its own config changes.
- * - An authored wrangler config appearing or disappearing restarts the dev
+ * - An authored Cloudflare config appearing or disappearing restarts the dev
  *   server (the sibling's watcher covers only `change` events on files that
  *   existed at resolution time).
  * - `flue.config.*` changes restart the dev server (project re-resolution).
@@ -811,19 +816,23 @@ function setupCloudflareDevSupervision(options: {
 		const filePath = normalizePath(file);
 		// Never react to workerd/wrangler local state (miniflare SQLite and
 		// friends can live under the source root when sourceRoot == root).
-		if (filePath.startsWith(`${normalizedRoot}/.wrangler/`)) return;
+		if (
+			filePath.startsWith(`${normalizedRoot}/.wrangler/`) ||
+			filePath.startsWith(`${normalizedRoot}/.cloudflare/`)
+		)
+			return;
 		if (isFlueConfigPath(filePath, state)) {
 			logger.info('[flue] flue.config changed; restarting the dev server.');
 			requestRestart(server);
 			return;
 		}
-		// An authored wrangler config appearing or disappearing is a
+		// An authored Cloudflare config appearing or disappearing is a
 		// structural change the sibling cannot see: its config watcher covers
 		// only `change` events on files that existed at resolution time.
 		// (Edits to an existing file stay the sibling's job.)
 		if (
 			(event === 'add' || event === 'unlink') &&
-			AUTHORED_WRANGLER_BASENAMES.some((basename) => filePath === `${normalizedRoot}/${basename}`)
+			AUTHORED_CLOUDFLARE_BASENAMES.some((basename) => filePath === `${normalizedRoot}/${basename}`)
 		) {
 			logger.info(
 				`[flue] ${path.basename(filePath)} was ${event === 'add' ? 'created' : 'removed'}; restarting the dev server.`,

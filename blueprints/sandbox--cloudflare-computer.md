@@ -122,9 +122,9 @@ export interface GetComputerWorkspaceOptions {
 export function getComputerWorkspace(options: GetComputerWorkspaceOptions): Workspace {
 	if (!options?.loader) {
 		throw new Error(
-			'[flue] getComputerWorkspace requires a WorkerLoader binding. Add this to your wrangler.jsonc:\n' +
-				'  { "worker_loaders": [{ "binding": "LOADER" }] }\n' +
-				'add "experimental" to compatibility_flags, and pass `loader: env.LOADER`. Worker Loader is ' +
+			'[flue] getComputerWorkspace requires a WorkerLoader binding. Add this to worker.env in cloudflare.config.ts:\n' +
+				'  LOADER: bindings.workerLoader()\n' +
+				'add "experimental" to worker.compatibilityFlags, and pass `loader: env.LOADER`. Worker Loader is ' +
 				'currently in beta — see https://developers.cloudflare.com/workers/runtime-apis/bindings/worker-loader/.',
 		);
 	}
@@ -386,17 +386,25 @@ adapter; do not install them.
 
 No provider API key is required. The project must run on Cloudflare Workers
 and must configure a Worker Loader binding plus the `experimental`
-compatibility flag. Ensure `wrangler.jsonc` contains:
+compatibility flag. Ensure `cloudflare.config.ts` contains:
 
-```jsonc
-{
-  "compatibility_flags": ["nodejs_compat", "experimental"],
-  "worker_loaders": [{ "binding": "LOADER" }]
-}
+```ts title="cloudflare.config.ts"
+import { bindings, defineConfig } from 'cf/config';
+
+export default defineConfig({
+  worker: {
+    name: 'my-flue-worker',
+    compatibilityDate: '2026-06-01',
+    compatibilityFlags: ['nodejs_compat', 'experimental'],
+    env: {
+      LOADER: bindings.workerLoader(),
+    },
+  },
+});
 ```
 
 Worker Loader is currently beta-gated. Never invent Cloudflare account details
-or tokens; the user authenticates through their existing Wrangler setup.
+or tokens; the user authenticates through their existing cf setup.
 
 ## Behavior and tradeoffs
 
@@ -482,9 +490,9 @@ This comparison is required when the marker is missing.
 
 1. Run the user's typechecker.
 2. Confirm the import path matches where you wrote `cloudflare-computer.ts`.
-3. Confirm `wrangler.jsonc` has a `worker_loaders` binding matching the code and `"experimental"` in `compatibility_flags`.
+3. Confirm `cloudflare.config.ts` has `LOADER: bindings.workerLoader()` in `worker.env` and `experimental` in `worker.compatibilityFlags`.
 4. Confirm `cloudflare.ts` re-exports `WorkspaceServiceProxy` and each sandbox-using agent module re-exports `workspaceHost as cloudflare`.
-5. Tell the user to use `vite dev` (the Cloudflare target comes from the `cloudflare()` plugin in `vite.config.ts`); if local Wrangler cannot simulate Worker Loader, use remote dev or deploy a preview Worker with `vite build && wrangler deploy`.
+5. Tell the user to use `cf dev` (the Cloudflare target comes from the `cloudflare()` plugin in `vite.config.ts`); if local development cannot simulate Worker Loader, deploy a preview Worker with `cf previews deploy`.
 
 ## Upgrade Guide
 

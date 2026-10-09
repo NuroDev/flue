@@ -18,7 +18,7 @@ Copy this prompt into your coding agent. The blueprint the agent fetches is an i
 
 - Install `@cloudflare/sandbox`.
 - Add or update `cloudflare.ts` in the Flue source root.
-- Add the Sandbox Durable Object binding and a new migration entry to `wrangler.jsonc`.
+- Add the Sandbox Durable Object binding and a SQLite export declaration to `cloudflare.config.ts`.
 - Create or update the container `Dockerfile`.
 - Modify your Flue agent to obtain the sandbox with `getSandbox(...)` and attach it with `useSandbox(...)`.
 - Inspect the existing project structure and avoid overwriting incompatible setup.
@@ -52,7 +52,7 @@ export function CodingAgent({ id }: AgentProps) {
 }
 ```
 
-The blueprint also exports `Sandbox` from the source-root `cloudflare.ts`, adds its Durable Object binding, a new migration entry, and its container declaration to `wrangler.jsonc`, and creates a project-root `Dockerfile` whose image tag matches the installed package version. Agent shell and file operations run in the container-backed sandbox keyed by the agent instance id. Cloudflare's direct delete API does not expose recursive or force controls, so `cloudflareSandbox()` implements either option by running `rm` in the container, matching Node's `fs.rm` semantics. A Node-targeted project must migrate to the Cloudflare target before using this integration.
+The blueprint also exports `Sandbox` from the source-root `cloudflare.ts`, adds its Durable Object binding, a SQLite export declaration, and its container declaration to `cloudflare.config.ts`, and creates a project-root `Dockerfile` whose image tag matches the installed package version. Agent shell and file operations run in the container-backed sandbox keyed by the agent instance id. Cloudflare's direct delete API does not expose recursive or force controls, so `cloudflareSandbox()` implements either option by running `rm` in the container, matching Node's `fs.rm` semantics. A Node-targeted project must migrate to the Cloudflare target before using this integration.
 
 ## Configure
 

@@ -11,3 +11,6 @@ blueprints/channel*.md
 blueprints/database*.md
 blueprints/tooling*.md
 plans/
+
+# cf build output, generated types, and local resource state
+**/.cloudflare/

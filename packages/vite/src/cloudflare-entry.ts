@@ -1,6 +1,6 @@
 /**
  * Generator for the Cloudflare Worker entry, served as the
- * `virtual:flue/worker` module (wrangler `main`, contributed by
+ * `virtual:flue/worker` module (Cloudflare `entrypoint`, or legacy `main`, contributed by
  * `flueWorkerConfig()`). The sibling `@cloudflare/vite-plugin` resolves
  * `main` through Vite's plugin pipeline in both dev and build, so no file is
  * written to disk; bare imports (`agents`, `@flue/runtime/*`) in the

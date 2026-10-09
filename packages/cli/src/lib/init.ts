@@ -36,12 +36,12 @@ export interface ScaffoldFile {
  * Kept in sync with the ranges the repo's own examples use.
  */
 const DEPENDENCY_VERSIONS = {
-	cloudflareVitePlugin: '^1.39.2',
+	cf: '1.0.0-beta.13',
+	cloudflareVitePlugin: '2.0.0-beta.sha-91c870c02',
 	hono: '^4.12.32',
 	typescript: '^7.0.2',
 	typesNode: '^22.10.10',
 	vite: '^8.0.14',
-	wrangler: '^4.113.0',
 } as const;
 
 /** `npm` unless the invoking package manager identifies itself otherwise. */
@@ -87,15 +87,15 @@ function sortedRecord(record: Record<string, string>): Record<string, string> {
 
 function renderPackageJson(opts: InitPlanOptions): string {
 	const cloudflare = opts.target === 'cloudflare';
-	// Nightly (prerelease) versions pin exactly; caret ranges resolve
+	// Beta and nightly (prerelease) versions pin exactly; caret ranges resolve
 	// prereleases too loosely to be meaningful there.
 	const flueRange = opts.cliVersion.includes('-') ? opts.cliVersion : `^${opts.cliVersion}`;
 
 	const scripts: Record<string, string> = {};
 	if (opts.deploy) {
-		scripts.dev = 'vite dev';
-		scripts.build = 'vite build';
-		if (cloudflare) scripts.deploy = 'vite build && wrangler deploy';
+		scripts.dev = cloudflare ? 'cf dev' : 'vite dev';
+		scripts.build = cloudflare ? 'cf build' : 'vite build';
+		if (cloudflare) scripts.deploy = 'cf deploy';
 		else scripts.start = 'node dist/server.mjs';
 	}
 	scripts['check:types'] = 'tsc --noEmit';
@@ -112,7 +112,7 @@ function renderPackageJson(opts: InitPlanOptions): string {
 		devDependencies.vite = DEPENDENCY_VERSIONS.vite;
 		if (cloudflare) {
 			devDependencies['@cloudflare/vite-plugin'] = DEPENDENCY_VERSIONS.cloudflareVitePlugin;
-			devDependencies.wrangler = DEPENDENCY_VERSIONS.wrangler;
+			devDependencies.cf = DEPENDENCY_VERSIONS.cf;
 		}
 	}
 
@@ -224,7 +224,7 @@ function renderCloudflareEntry(): string {
 		`// Worker-level Cloudflare code lives here; HTTP routing stays in src/app.ts.`,
 		`//`,
 		`//   - Named exports become top-level Worker exports — e.g. application-owned`,
-		`//     Durable Object classes (declare their bindings in wrangler.jsonc).`,
+		`//     Durable Object classes (declare them in cloudflare.config.ts).`,
 		`//   - An optional default export adds non-HTTP handlers: scheduled (cron),`,
 		`//     queue consumers, inbound email, etc. (never \`fetch\`).`,
 		`//`,
@@ -235,27 +235,28 @@ function renderCloudflareEntry(): string {
 	].join('\n');
 }
 
-function renderWrangler(opts: InitPlanOptions): string {
+function renderCloudflareConfig(opts: InitPlanOptions): string {
 	return [
-		`{`,
-		`\t"$schema": "./node_modules/wrangler/config-schema.json",`,
-		`\t"name": "${projectNameFrom(opts.targetDir)}",`,
-		`\t"compatibility_date": "2026-06-01",`,
-		`\t"compatibility_flags": ["nodejs_compat"],`,
-		`\t// Workers Traces shows each agent response as a trace with agent-level`,
-		`\t// spans: https://flueframework.com/docs/guide/observability/#cloudflare`,
-		`\t"observability": { "traces": { "enabled": true } },`,
-		`\t// Every agent generates a Durable Object class named after its identity`,
-		`\t// (Hello -> FlueHelloAgent), and Cloudflare requires a migration entry`,
-		`\t// for each one. Append a new tag when you add an agent:`,
-		`\t// https://flueframework.com/docs/guide/cloudflare-target/#managing-migrations`,
-		`\t"migrations": [{ "tag": "v1", "new_sqlite_classes": ["FlueHelloAgent"] }]`,
-		`}`,
+		`import { bindings, defineConfig, exports } from 'cf/config';`,
+		``,
+		`export default defineConfig({`,
+		`\tworker: {`,
+		`\t\tname: '${projectNameFrom(opts.targetDir)}',`,
+		`\t\tcompatibilityDate: '2026-06-01',`,
+		`\t\tenv: { ANTHROPIC_API_KEY: bindings.secret() },`,
+		`\t\tobservability: { traces: { enabled: true } },`,
+		`\t\t// Flue supplies the entrypoint, nodejs_compat, and agent bindings.`,
+		`\t\t// Declare each agent class here, including new agents you add.`,
+		`\t\texports: {`,
+		`\t\t\tFlueHelloAgent: exports.durableObject({ storage: 'sqlite' }),`,
+		`\t\t},`,
+		`\t},`,
+		`});`,
 		``,
 	].join('\n');
 }
 
-function renderTsconfig(): string {
+function renderTsconfig(opts: InitPlanOptions): string {
 	const tsconfig = {
 		compilerOptions: {
 			target: 'ES2022',
@@ -269,7 +270,8 @@ function renderTsconfig(): string {
 			skipLibCheck: true,
 			noEmit: true,
 		},
-		include: ['src'],
+		include:
+			opts.target === 'cloudflare' ? ['src', '*.ts', '.cloudflare/types/**/*.d.ts'] : ['src'],
 	};
 	return `${JSON.stringify(tsconfig, null, '\t')}\n`;
 }
@@ -278,7 +280,7 @@ function renderGitignore(opts: InitPlanOptions): string {
 	const lines = ['node_modules/', 'dist/', '.env'];
 	if (opts.target === 'cloudflare') {
 		// wrangler/workerd local state (miniflare SQLite, deploy redirect).
-		lines.push('.wrangler/');
+		lines.push('.cloudflare/', '.wrangler/');
 	} else {
 		lines.push('data/');
 	}
@@ -305,7 +307,7 @@ function renderAgentsMd(opts: InitPlanOptions): string {
 	if (opts.target === 'cloudflare') {
 		layout.push(
 			`- \`src/cloudflare.ts\` — Worker-level exports and non-HTTP handlers.`,
-			`- \`wrangler.jsonc\` — Worker config; every agent needs a Durable Object migration entry.`,
+			`- \`cloudflare.config.ts\` — Worker config; declare each agent class in \`worker.exports\`.`,
 		);
 	} else {
 		layout.push(`- \`src/db.ts\` — the persistence adapter for durable conversations.`);
@@ -408,7 +410,7 @@ export function planInitFiles(opts: InitPlanOptions): ScaffoldFile[] {
 	const files: ScaffoldFile[] = [
 		{ relPath: 'flue.config.ts', content: renderFlueConfig(opts.target) },
 		{ relPath: 'package.json', content: renderPackageJson(opts) },
-		{ relPath: 'tsconfig.json', content: renderTsconfig() },
+		{ relPath: 'tsconfig.json', content: renderTsconfig(opts) },
 		{ relPath: '.gitignore', content: renderGitignore(opts) },
 		{ relPath: '.env', content: renderEnv() },
 		{ relPath: path.join('src', 'agents', 'hello.ts'), content: renderHelloAgent(opts.target) },
@@ -422,7 +424,7 @@ export function planInitFiles(opts: InitPlanOptions): ScaffoldFile[] {
 	if (opts.target === 'cloudflare') {
 		files.push(
 			{ relPath: path.join('src', 'cloudflare.ts'), content: renderCloudflareEntry() },
-			{ relPath: 'wrangler.jsonc', content: renderWrangler(opts) },
+			{ relPath: 'cloudflare.config.ts', content: renderCloudflareConfig(opts) },
 		);
 	} else {
 		files.push({ relPath: path.join('src', 'db.ts'), content: renderDb() });

@@ -43,7 +43,7 @@ export default defineConfig({
 - `flue build` — now `vite build`; on Node, then `node dist/server.mjs` as before.
 - Target selection via `--target` — now auto-detected from the plugin array, or set `target` in `flue.config.ts`.
 
-Update `package.json` scripts and every CI pipeline that builds the project. On Cloudflare the plugin generates two inputs the Cloudflare plugin consumes — `.flue-vite/` (the Worker entry) and `.flue-vite.wrangler.jsonc` (your authored `wrangler.jsonc` merged with generated bindings). Add both to `.gitignore`.
+Update `package.json` scripts and every CI pipeline that builds the project. On Cloudflare, use `cloudflare.config.ts` with the Cloudflare Vite plugin beta and `cf` CLI. Flue supplies a virtual Worker entry and generated namespace bindings. Add `.cloudflare/` to `.gitignore`. Existing Wrangler projects should run `cf migrate` before using `cf` project commands.
 
 If you have a `flue.config.ts`, two changes:
 
@@ -306,8 +306,8 @@ Messages remain Flue-owned parts-based values; new part kinds (`data-*` from `us
 ## Cloudflare deployments
 
 - **`FlueRegistry` is gone.** The beta's deployment-wide registry DO indexed workflow runs; nothing replaces it. Append a `deleted_classes` migration for it, and for every `Flue<Name>Workflow` class.
-- Generated classes are per-agent only: `export function Triage()` → class `FlueTriageAgent`, binding `FLUE_TRIAGE_AGENT` (one class per agent function; a file can carry several). Migration history stays user-authored — adding an agent is always the triple: the exported agent function in a `'use agent'` module, the mount (unless dispatch-only), and a `new_sqlite_classes` entry. Renames use `renamed_classes` — but remember the [schema reset](#before-you-start-persisted-state-resets): a beta-era database is rejected even under a renamed class, so beta agents are usually retired (`deleted_classes`) in favor of fresh identities.
-- Your authored `wrangler.jsonc` is never modified; the build merges it into the generated, gitignored `.flue-vite.wrangler.jsonc`, and `vite build` writes the finalized config into `dist/` with a deploy redirect — deploy with plain `wrangler deploy` from the project root, no `--config` flag.
+- Generated classes are per-agent only: `export function Triage()` → class `FlueTriageAgent`, binding `FLUE_TRIAGE_AGENT` (one class per agent function; a file can carry several). Declare live generated agent classes in `worker.exports` with `exports.durableObject({ storage: 'sqlite' })`. Renames and deletions use lifecycle tombstones, but remember the [schema reset](#before-you-start-persisted-state-resets): an incompatible beta-era database is rejected even under a renamed class, so incompatible agents need a drained deployment with fresh identities.
+- Your authored `cloudflare.config.ts` is never modified. The Cloudflare plugin applies Flue's customizer in memory and emits `.cloudflare/output/v0/`. Build and deploy with `cf deploy`; validate without credentials with `cf build`.
 - `cloudflare.ts` moved from `.flue/cloudflare.ts` to `src/cloudflare.ts`. The generated entry exports every agent class plus your `app.ts` fetch handler; application-owned exports (your own DOs, Workflows, the `scheduled` handler) come from `cloudflare.ts`, and scheduled work starts with `dispatch()`, not `invoke()`.
 - Update `run_worker_first` from the beta's `["/api/*", "/_flue/*"]` to cover your actual mounts, for example `["/api/*", "/agents/*", "/channels/*"]`.
 - The minimum `compatibility_date` is `2026-04-01`, validated at build.
@@ -342,5 +342,5 @@ flue run src/agents/support.ts --message "Handle ticket 42." --id ticket-42
 9. **Providers.** Replace `registerProvider()`/`registerApiProvider()` calls with Pi's `createProvider()` + `setProvider()` (add `@earendil-works/pi-ai` to your dependencies); replace the Cloudflare binding registration with `cloudflareBindingProvider()` from `@flue/runtime/cloudflare/workers-ai`; optionally narrow the shipped providers with `flue({ providers: [...] })` (name `'cloudflare'` to keep Workers AI).
 10. **Observability.** Migrate `run_*` handling to `agent_start`/`agent_end`/`submission_settled` and the `instanceId`/`submissionId` correlation fields.
 11. **Clients.** Move SDK and React usage to conversation-scoped clients and `useFlueAgent({ url | client })`.
-12. **Deployment.** Append `deleted_classes` for `FlueRegistry` and workflow classes; add `new_sqlite_classes` for new agents; plan the drained deployment for the schema reset.
-13. **Verify.** Typecheck, tests, a production `vite build`, and a check of the built artifact (exports, merged wrangler config) before deploying.
+12. **Deployment.** Declare deleted lifecycle tombstones for retired classes and live SQLite exports for new agents; plan the drained deployment for the schema reset.
+13. **Verify.** Typecheck, tests, a production `cf build` on Cloudflare, and a check of the built artifact (exports and bindings) before deploying.

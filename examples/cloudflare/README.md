@@ -7,8 +7,8 @@ agents use the project-owned sandbox adapter at `src/sandboxes/cloudflare-comput
 
 The app is built with Vite: `flue()` from `@flue/vite` plus the official
 `@cloudflare/vite-plugin` in `vite.config.ts` (flue first — it prepares the
-generated Worker entry and merged wrangler config the Cloudflare plugin
-consumes). Agent modules carry the `'use agent'` directive, and `src/app.ts`
+generated Worker entry and bindings after the Cloudflare plugin loads
+cloudflare.config.ts). Agent modules carry the `'use agent'` directive, and `src/app.ts`
 mounts each agent's routes explicitly.
 
 ## Agents
@@ -41,24 +41,17 @@ matching provider key in `.env` at the project root (see
 
 ## Worker Loader requirement (skills-from-r2, skills-from-git)
 
-Both hydration examples use the project-owned sandbox adapter at `src/sandboxes/cloudflare-computer.ts` and require a `worker_loaders` binding. Worker Loader
+Both hydration examples use the project-owned sandbox adapter at `src/sandboxes/cloudflare-computer.ts` and require a `LOADER: bindings.workerLoader()` binding. Worker Loader
 is **currently in beta** and your Cloudflare account needs access; the
-binding is already declared in `wrangler.jsonc` here, along with the
+binding is already declared in `cloudflare.config.ts` here, along with the
 `experimental` compatibility flag the worker-shell backend needs.
 
 ### Local development caveat
 
-`vite dev` runs the worker in local workerd and can expose a local
-`worker_loaders` binding, but Wrangler's local R2 CLI storage may not be
-visible to the running dev server's R2 binding. For an end-to-end R2
-hydration smoke, use remote resources. You have two options:
-
-- **`wrangler dev --remote`** — runs the worker against Cloudflare's edge
-  using your dev bucket. Requires Worker Loader access on your account.
-  (Run `pnpm run build` first; `wrangler dev`/`deploy` read the built output
-  via the deploy redirect the Cloudflare Vite plugin writes.)
-- **deploy to a preview environment** — `pnpm run deploy`, then exercise
-  the agent over HTTP afterward.
+`cf dev` runs the Worker in local workerd. The R2 binding uses local data
+by default. To seed it, run `REMOTE=0 ./seed-r2.sh` with the dev server's `.cloudflare/state` persistence path. To exercise remote resources, deploy with
+`cf previews deploy` or `pnpm run deploy`, then seed the corresponding bucket.
+Remote commands require authentication and Worker Loader access.
 
 The cloudflare-computer sandbox runs commands in just-bash (a JavaScript
 shell) over a durable Workspace — coreutils and `grep`/`find` work; native
@@ -72,7 +65,7 @@ Before running `skills-from-r2`, put a SKILL.md into your dev R2 bucket
 so the hydration step has something to copy:
 
 ```bash
-# from this directory; requires wrangler installed + authenticated
+# from this directory; requires cf installed + authenticated
 ./seed-r2.sh
 ```
 
@@ -80,7 +73,7 @@ The script writes `.agents/skills/spam-filter/SKILL.md` into
 `flue-example-knowledge-base-dev`. Pass `BUCKET=prod` to seed the prod
 bucket instead.
 
-If you want to use different bucket names, edit `wrangler.jsonc` and the
+If you want to use different bucket names, edit `cloudflare.config.ts` and the
 `BUCKET_NAME` table in `seed-r2.sh` in lockstep.
 
 ## Running
@@ -89,7 +82,7 @@ If you want to use different bucket names, edit `wrangler.jsonc` and the
 # Dev server (local workerd via the Cloudflare Vite plugin)
 pnpm run dev
 
-# Production build (deployable Worker output under dist/)
+# Production build (deployable output under .cloudflare/output/v0/)
 pnpm run build
 
 # Trigger an agent (the mounts live in src/app.ts; port printed by vite dev).

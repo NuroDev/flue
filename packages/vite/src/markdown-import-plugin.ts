@@ -36,6 +36,7 @@ const PACKAGED_FILE_WARNING_BYTES = 1024 * 1024;
 const EXCLUDED_DIRECTORIES = new Set([
 	'.git',
 	'.cache',
+	'.cloudflare',
 	'.turbo',
 	'.wrangler',
 	'dist',
