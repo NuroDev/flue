@@ -54,3 +54,9 @@ corporate-ca.pem
 
 # legacy code (kept locally for reference, not pushed)
 legacy/
+
+# Cloudflare beta build output, generated types, and local state
+.cloudflare/
+
+# Temporary Cloudflare integration fixtures
+packages/vite/tests/.tmp-*/

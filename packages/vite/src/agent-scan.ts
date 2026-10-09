@@ -24,9 +24,8 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { AGENT_IDENTITY_PATTERN } from '@flue/runtime/internal';
-import { glob } from 'tinyglobby';
-import { parseAstAsync } from 'vite';
+import { glob, globSync } from 'tinyglobby';
+import { parseAst, parseAstAsync } from 'vite';
 
 /** The module directive that marks a file as a Flue agent module. */
 export const AGENT_DIRECTIVE = 'use agent';
@@ -36,10 +35,11 @@ export const AGENT_DIRECTIVE = 'use agent';
  * override) key durable storage everywhere (Durable Object class + binding
  * names on Cloudflare, conversation storage slugs on Node), so they are
  * restricted to predictable identifier-ish shapes: PascalCase function names
- * (`IssueTriage`) and kebab-case overrides (`issue-triage`) both match. The
- * canonical pattern is imported from `@flue/runtime` so the scan and
- * registration never drift.
+ * (`IssueTriage`) and kebab-case overrides (`issue-triage`) both match.
+ * Keep the scanner independent of Worker runtime imports: Cloudflare blocks
+ * config dependencies from the Worker graph. A test checks this runtime contract.
  */
+export const AGENT_IDENTITY_PATTERN = /^[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*$/;
 
 /** Module extensions that can carry the `'use agent'` directive. */
 const AGENT_MODULE_EXTENSIONS = new Set(['.ts', '.mts', '.js', '.mjs']);
@@ -48,13 +48,13 @@ const DEFAULT_SCAN_PATTERNS = ['**/*.{ts,mts,js,mjs}'];
 
 /**
  * Directories that never contain authored agent modules: installed
- * dependencies and build output. Generated directories (`.wrangler`,
+ * dependencies and build output. Generated directories (`.cloudflare`,
  * `.flue`, …) and other dotfiles/dot-directories are excluded by
  * tinyglobby's default `dot: false`, but the Flue-adjacent ones are listed
  * explicitly so an `agents` override with `dot: true` semantics can never
  * resurrect them.
  */
-const EXCLUDED_DIRECTORY_PATTERNS = ['**/node_modules/**', '**/dist/**', '**/.wrangler/**'];
+const EXCLUDED_DIRECTORY_PATTERNS = ['**/node_modules/**', '**/dist/**', '**/.cloudflare/**'];
 
 export interface ScanAgentsOptions {
 	/** Absolute path to the project source root the scan runs over. */
@@ -280,6 +280,52 @@ export async function scanAgents(options: ScanAgentsOptions): Promise<AgentScanR
 		}),
 	);
 
+	return collectScanResults(filePaths, scans);
+}
+
+export function scanAgentsSync(options: ScanAgentsOptions): AgentScanResult[] {
+	const patterns =
+		options.agents === undefined
+			? DEFAULT_SCAN_PATTERNS
+			: typeof options.agents === 'string'
+				? [options.agents]
+				: [...options.agents];
+	const filePaths = [
+		...new Set(
+			globSync(patterns, {
+				cwd: path.resolve(options.sourceRoot),
+				ignore: EXCLUDED_DIRECTORY_PATTERNS,
+				absolute: true,
+				onlyFiles: true,
+			}).map((filePath) => path.normalize(filePath)),
+		),
+	]
+		.filter(isAgentModulePath)
+		.sort(comparePaths);
+	const scans = new Map<string, AgentModuleScan>();
+	for (const filePath of filePaths) {
+		const code = fs.readFileSync(filePath, 'utf8');
+		if (!code.includes(AGENT_DIRECTIVE)) continue;
+		try {
+			const program = parseAst(code, { lang: parserLangForFile(filePath) }, filePath);
+			const body = program.body as readonly unknown[];
+			const hasDirective = programBodyHasAgentDirective(body);
+			scans.set(filePath, {
+				hasDirective,
+				agents: hasDirective ? collectModuleAgents(body, code, filePath) : [],
+			});
+		} catch (error) {
+			if (error instanceof AgentScanError) throw error;
+			throw new AgentModuleParseError(filePath, error);
+		}
+	}
+	return collectScanResults(filePaths, scans);
+}
+
+function collectScanResults(
+	filePaths: readonly string[],
+	scans: ReadonlyMap<string, AgentModuleScan>,
+): AgentScanResult[] {
 	const results: AgentScanResult[] = [];
 	for (const filePath of filePaths) {
 		const scan = scans.get(filePath);
@@ -295,7 +341,6 @@ export async function scanAgents(options: ScanAgentsOptions): Promise<AgentScanR
 			});
 		}
 	}
-
 	assertValidIdentities(results);
 	assertUniqueIdentities(results);
 	assertUniqueDurableIdentifiers(results);
@@ -307,7 +352,7 @@ export function isAgentModulePath(filePath: string): boolean {
 	return AGENT_MODULE_EXTENSIONS.has(path.extname(filePath));
 }
 
-/** `Flue<PascalCase>Agent` — matches the Cloudflare codegen exactly. */
+/** `Flue<PascalCase>Agent` matches the Cloudflare codegen exactly. */
 export function agentClassName(identity: string): string {
 	return `Flue${pascalCaseName(identity)}Agent`;
 }
@@ -716,7 +761,7 @@ function assertUniqueIdentities(results: readonly AgentScanResult[]): void {
  * Distinct identities must not fold to the same generated Durable Object
  * identifier: agentClassName()/agentBindingName() are lossy (case and
  * kebab/camel folding), and a collision emits the same `export const` twice
- * in the generated worker entry and duplicate wrangler DO bindings — cryptic
+ * in the generated worker entry and duplicate Cloudflare DO bindings — cryptic
  * build failures with no pointer to the identity clash. Class and binding
  * names fold differently (`AB` and `Ab` share only a binding name), so each
  * is checked independently.

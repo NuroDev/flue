@@ -36,12 +36,12 @@ export interface ScaffoldFile {
  * Kept in sync with the ranges the repo's own examples use.
  */
 const DEPENDENCY_VERSIONS = {
-	cloudflareVitePlugin: '^1.39.2',
+	cf: '1.0.0-beta.14',
+	cloudflareVitePlugin: '2.0.0-beta.sha-91c870c02',
 	hono: '^4.12.32',
 	typescript: '^7.0.2',
 	typesNode: '^22.10.10',
 	vite: '^8.0.14',
-	wrangler: '^4.113.0',
 } as const;
 
 /** `npm` unless the invoking package manager identifies itself otherwise. */
@@ -95,7 +95,7 @@ function renderPackageJson(opts: InitPlanOptions): string {
 	if (opts.deploy) {
 		scripts.dev = 'vite dev';
 		scripts.build = 'vite build';
-		if (cloudflare) scripts.deploy = 'vite build && wrangler deploy';
+		if (cloudflare) scripts.deploy = 'cf deploy';
 		else scripts.start = 'node dist/server.mjs';
 	}
 	scripts['check:types'] = 'tsc --noEmit';
@@ -112,7 +112,7 @@ function renderPackageJson(opts: InitPlanOptions): string {
 		devDependencies.vite = DEPENDENCY_VERSIONS.vite;
 		if (cloudflare) {
 			devDependencies['@cloudflare/vite-plugin'] = DEPENDENCY_VERSIONS.cloudflareVitePlugin;
-			devDependencies.wrangler = DEPENDENCY_VERSIONS.wrangler;
+			devDependencies.cf = DEPENDENCY_VERSIONS.cf;
 		}
 	}
 
@@ -224,7 +224,7 @@ function renderCloudflareEntry(): string {
 		`// Worker-level Cloudflare code lives here; HTTP routing stays in src/app.ts.`,
 		`//`,
 		`//   - Named exports become top-level Worker exports — e.g. application-owned`,
-		`//     Durable Object classes (declare their bindings in wrangler.jsonc).`,
+		`//     Durable Object classes (declare their resources in cloudflare.config.ts).`,
 		`//   - An optional default export adds non-HTTP handlers: scheduled (cron),`,
 		`//     queue consumers, inbound email, etc. (never \`fetch\`).`,
 		`//`,
@@ -235,22 +235,19 @@ function renderCloudflareEntry(): string {
 	].join('\n');
 }
 
-function renderWrangler(opts: InitPlanOptions): string {
+function renderCloudflareConfig(opts: InitPlanOptions): string {
 	return [
-		`{`,
-		`\t"$schema": "./node_modules/wrangler/config-schema.json",`,
-		`\t"name": "${projectNameFrom(opts.targetDir)}",`,
-		`\t"compatibility_date": "2026-06-01",`,
-		`\t"compatibility_flags": ["nodejs_compat"],`,
-		`\t// Workers Traces shows each agent response as a trace with agent-level`,
-		`\t// spans: https://flueframework.com/docs/guide/observability/#cloudflare`,
-		`\t"observability": { "traces": { "enabled": true } },`,
-		`\t// Every agent generates a Durable Object class named after its identity`,
-		`\t// (Hello -> FlueHelloAgent), and Cloudflare requires a migration entry`,
-		`\t// for each one. Append a new tag when you add an agent:`,
-		`\t// https://flueframework.com/docs/guide/cloudflare-target/#managing-migrations`,
-		`\t"migrations": [{ "tag": "v1", "new_sqlite_classes": ["FlueHelloAgent"] }]`,
-		`}`,
+		`import flue from '@flue/vite/cloudflare/config';`,
+		`import { defineConfig } from 'cf/config';`,
+		``,
+		`export default defineConfig({`,
+		`	worker: {`,
+		`		name: '${projectNameFrom(opts.targetDir)}',`,
+		`		compatibilityDate: '2026-06-01',`,
+		`		observability: { traces: { enabled: true } },`,
+		`		exports: { ...flue.exports },`,
+		`	},`,
+		`});`,
 		``,
 	].join('\n');
 }
@@ -277,8 +274,8 @@ function renderTsconfig(): string {
 function renderGitignore(opts: InitPlanOptions): string {
 	const lines = ['node_modules/', 'dist/', '.env'];
 	if (opts.target === 'cloudflare') {
-		// wrangler/workerd local state (miniflare SQLite, deploy redirect).
-		lines.push('.wrangler/');
+		// Cloudflare build output, generated types, and local state.
+		lines.push('.cloudflare/', '.dev.vars');
 	} else {
 		lines.push('data/');
 	}
@@ -305,7 +302,7 @@ function renderAgentsMd(opts: InitPlanOptions): string {
 	if (opts.target === 'cloudflare') {
 		layout.push(
 			`- \`src/cloudflare.ts\` — Worker-level exports and non-HTTP handlers.`,
-			`- \`wrangler.jsonc\` — Worker config; every agent needs a Durable Object migration entry.`,
+			`- \`cloudflare.config.ts\` — Worker config; spread flue.exports to discover agent resources automatically.`,
 		);
 	} else {
 		layout.push(`- \`src/db.ts\` — the persistence adapter for durable conversations.`);
@@ -422,7 +419,7 @@ export function planInitFiles(opts: InitPlanOptions): ScaffoldFile[] {
 	if (opts.target === 'cloudflare') {
 		files.push(
 			{ relPath: path.join('src', 'cloudflare.ts'), content: renderCloudflareEntry() },
-			{ relPath: 'wrangler.jsonc', content: renderWrangler(opts) },
+			{ relPath: 'cloudflare.config.ts', content: renderCloudflareConfig(opts) },
 		);
 	} else {
 		files.push({ relPath: path.join('src', 'db.ts'), content: renderDb() });

@@ -3,6 +3,7 @@ import { defineConfig } from 'tsdown';
 export default defineConfig({
 	entry: {
 		index: 'src/index.ts',
+		'cloudflare/config': 'src/cloudflare-config.ts',
 		// `@flue/vite/internal` — plumbing shared with `@flue/cli` (flue run).
 		internal: 'src/internal.ts',
 		'bootstrap/node-server': 'src/bootstrap/node-server.ts',
