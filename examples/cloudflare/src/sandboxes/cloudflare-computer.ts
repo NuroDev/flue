@@ -79,10 +79,10 @@ export interface GetComputerWorkspaceOptions {
 export function getComputerWorkspace(options: GetComputerWorkspaceOptions): Workspace {
 	if (!options?.loader) {
 		throw new Error(
-			'[flue] getComputerWorkspace requires a WorkerLoader binding. Add this to your wrangler.jsonc:\n' +
-				'  { "worker_loaders": [{ "binding": "LOADER" }] }\n' +
-				'add "experimental" to compatibility_flags, and pass `loader: env.LOADER`. Worker Loader is ' +
-				'currently in beta — see https://developers.cloudflare.com/workers/runtime-apis/bindings/worker-loader/.',
+			'[flue] getComputerWorkspace requires a WorkerLoader binding. Add this to cloudflare.config.ts:\n' +
+				'  env: { LOADER: bindings.workerLoader() }\n' +
+				'add "experimental" to compatibilityFlags, and pass `loader: env.LOADER`. Worker Loader is ' +
+				'currently in beta, see https://developers.cloudflare.com/workers/runtime-apis/bindings/worker-loader/.',
 		);
 	}
 	const identity = getDurableObjectIdentity();

@@ -8,13 +8,16 @@
 		"hono": "^4.12.32"
 	},
 	"devDependencies": {
-		"@cloudflare/vite-plugin": "^1.39.2",
+		"@cloudflare/vite-plugin": "2.0.0-beta.sha-91c870c02",
 		"@cloudflare/workers-types": "^5.20260721.1",
 		"@flue/cli": "workspace:*",
 		"@flue/vite": "workspace:*",
+		"cf": "1.0.0-beta.14",
 		"vite": "^8.0.14"
 	},
 	"scripts": {
-		"build": "vite build"
+		"build": "cf build",
+		"dev": "cf dev",
+		"deploy": "cf deploy"
 	}
 }

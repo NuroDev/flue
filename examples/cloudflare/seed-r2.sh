@@ -8,9 +8,9 @@
 # Usage:
 #   ./seed-r2.sh                       # seeds the remote dev bucket
 #   BUCKET=prod ./seed-r2.sh           # seeds the remote prod bucket
-#   REMOTE=0 ./seed-r2.sh              # seeds wrangler's local R2 store
+#   REMOTE=0 ./seed-r2.sh              # seeds cf's separate local R2 store
 #
-# Requires pnpm dependencies installed and wrangler authenticated.
+# Requires pnpm dependencies installed and cf authenticated for remote uploads.
 set -euo pipefail
 
 BUCKET="${BUCKET:-dev}"
@@ -51,9 +51,9 @@ Heuristics that strongly indicate spam:
 EOF
 
 echo "Uploading $SKILL_KEY to $BUCKET_NAME..."
-REMOTE_FLAG=()
-if [[ "$REMOTE" != "0" ]]; then
-  REMOTE_FLAG=(--remote)
+LOCAL_FLAG=()
+if [[ "$REMOTE" == "0" ]]; then
+  LOCAL_FLAG=(--local)
 fi
-pnpm exec wrangler r2 object put "$BUCKET_NAME/$SKILL_KEY" --file "$TMP" ${REMOTE_FLAG+"${REMOTE_FLAG[@]}"}
+pnpm exec cf r2 objects put "$SKILL_KEY" --bucket-name "$BUCKET_NAME" --file "$TMP" ${LOCAL_FLAG+"${LOCAL_FLAG[@]}"}
 echo "Done."
