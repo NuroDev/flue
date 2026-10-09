@@ -1,5 +1,16 @@
 # @flue/vite
 
+## 2.3.0-beta.0
+
+### Minor Changes
+
+- 27394f9: Support the cf CLI beta and cloudflare.config.ts with the Cloudflare Vite plugin 2.0 beta. Preserve generated agent identities and namespace bindings, use typed configuration and cf commands in new Cloudflare projects, and update examples and deployment documentation. Existing Wrangler customizers remain supported.
+
+### Patch Changes
+
+- Updated dependencies
+  - @flue/runtime@2.3.0-beta.0
+
 ## 2.2.2
 
 ### Patch Changes

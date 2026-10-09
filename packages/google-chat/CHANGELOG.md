@@ -1,5 +1,12 @@
 # @flue/google-chat
 
+## 2.3.0-beta.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @flue/runtime@2.3.0-beta.0
+
 ## 2.2.2
 
 ### Patch Changes

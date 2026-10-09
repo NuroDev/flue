@@ -1,5 +1,9 @@
 # @flue/runtime
 
+## 2.3.0-beta.0
+
+No changes in this release.
+
 ## 2.2.2
 
 ### Patch Changes
