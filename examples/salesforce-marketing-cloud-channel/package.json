@@ -15,7 +15,7 @@
 		"hono": "^4.12.32"
 	},
 	"devDependencies": {
-		"@cloudflare/vite-plugin": "2.0.0-beta.sha-91c870c02",
+		"@cloudflare/vite-plugin": "beta",
 		"@cloudflare/vitest-pool-workers": "0.19.1",
 		"@flue/cli": "workspace:*",
 		"@flue/vite": "workspace:*",

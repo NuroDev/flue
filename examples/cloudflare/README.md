@@ -5,12 +5,13 @@ here are intentionally minimal — each one demonstrates a single capability
 end-to-end so it's easy to copy the pattern into a real app. The workspace
 agents use the project-owned sandbox adapter at `src/sandboxes/cloudflare-computer.ts`, generated conceptually by `flue add sandbox @cloudflare/computer`.
 
-The app is built with Vite: `flue()` from `@flue/vite` plus the official
-beta `@cloudflare/vite-plugin` in `vite.config.ts` (flue first, it prepares the
-generated Worker entry and bindings the Cloudflare plugin consumes).
-`cloudflare.config.ts` declares resources with `cf/config` and spreads
-`flue.exports` from `@flue/vite/cloudflare/config`. Agent modules carry the
-`'use agent'` directive, and `src/app.ts` mounts each agent's routes explicitly.
+The app is built with Vite: `plugins: [flue(), cloudflare()]` combines
+`@flue/vite` with the official beta `@cloudflare/vite-plugin`.
+`cloudflare.config.ts` imports the default resource object from
+`@flue/vite/cloudflare`. It sets `entrypoint: flue.entrypoint`, spreads
+`flue.bindings(workerName)` into `env` and `flue.exports` into `exports`,
+and declares compatibility flags. Agent modules carry the `'use agent'`
+directive, and `src/app.ts` mounts each agent's routes explicitly.
 
 ## Agents
 

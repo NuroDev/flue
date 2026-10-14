@@ -28,10 +28,11 @@ Use Node.js 22.19 or later. Run `pnpm install` from the workspace root,
 then build the workspace packages with `pnpm build`. Store the environment
 variables above in a local `.env` file.
 
-`cloudflare.config.ts` declares resources with `cf/config` and
-`flue.exports` from the default import of `@flue/vite/cloudflare/config`.
-The beta Cloudflare Vite plugin uses Flue's generated Worker entry and
-Durable Object bindings.
+`cloudflare.config.ts` imports the default resource object from
+`@flue/vite/cloudflare`. It sets `entrypoint: flue.entrypoint`, spreads
+`flue.bindings(workerName)` into `env` and `flue.exports` into `exports`,
+and declares `nodejs_compat`. The Vite config uses
+`plugins: [flue(), cloudflare()]` with the beta Cloudflare Vite plugin.
 
 From this directory:
 

@@ -15,7 +15,7 @@
 		"valibot": "^1.0.0"
 	},
 	"devDependencies": {
-		"@cloudflare/vite-plugin": "2.0.0-beta.sha-91c870c02",
+		"@cloudflare/vite-plugin": "beta",
 		"@cloudflare/workers-types": "^5.20260721.1",
 		"@flue/cli": "workspace:*",
 		"@flue/vite": "workspace:*",
