@@ -5,7 +5,9 @@
 	"scripts": {
 		"build": "vite build",
 		"build:cloudflare": "vite build --config vite.config.cloudflare.ts",
-		"check:types": "tsc --noEmit"
+		"check:types": "tsc --noEmit",
+		"deploy:cloudflare": "pnpm run build:cloudflare && cf deploy --prebuilt --mode production",
+		"dev:cloudflare": "vite --config vite.config.cloudflare.ts"
 	},
 	"dependencies": {
 		"@flue/notion": "workspace:*",
@@ -15,11 +17,12 @@
 		"valibot": "^1.0.0"
 	},
 	"devDependencies": {
-		"@cloudflare/vite-plugin": "^1.39.2",
+		"@cloudflare/vite-plugin": "beta",
 		"@cloudflare/vitest-pool-workers": "0.19.1",
 		"@flue/cli": "workspace:*",
 		"@flue/vite": "workspace:*",
 		"@types/node": "^26.1.1",
+		"cf": "1.0.0-beta.14",
 		"typescript": "^7.0.2",
 		"vite": "^8.0.14",
 		"vitest": "^4.1.6"

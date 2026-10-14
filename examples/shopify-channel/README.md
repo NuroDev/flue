@@ -67,3 +67,27 @@ pnpm run test
 pnpm run build
 pnpm run build:cloudflare
 ```
+
+## Cloudflare setup
+
+Use Node.js 22.19 or later. Run `pnpm install` from the workspace root,
+then build the workspace packages with `pnpm build`. Store the environment
+variables above in a local `.env` file.
+
+`cloudflare.config.ts` imports the default resource object from
+`@flue/vite/cloudflare`. It sets `entrypoint: flue.entrypoint`, spreads
+`flue.bindings(workerName)` into `env` and `flue.exports` into `exports`,
+and declares `nodejs_compat`. The Vite config uses
+`plugins: [flue(), cloudflare()]` with the beta Cloudflare Vite plugin.
+
+From this directory:
+
+```sh
+pnpm run build:cloudflare
+pnpm exec cf auth login
+pnpm exec cf deploy --prebuilt --mode production --secrets-file .env
+```
+
+The separate Cloudflare Vite config is required for these dual-target
+examples. Build it before deploying with `--prebuilt`; `cf deploy` without
+that flag runs the default Node Vite config.
