@@ -37,7 +37,7 @@ export interface ScaffoldFile {
  */
 const DEPENDENCY_VERSIONS = {
 	cf: '1.0.0-beta.14',
-	cloudflareVitePlugin: '2.0.0-beta.sha-91c870c02',
+	cloudflareVitePlugin: 'beta',
 	hono: '^4.12.32',
 	typescript: '^7.0.2',
 	typesNode: '^22.10.10',
@@ -142,11 +142,11 @@ function renderViteConfig(target: InitTarget): string {
 	if (target === 'cloudflare') {
 		return [
 			`import { cloudflare } from '@cloudflare/vite-plugin';`,
-			`import { flue, flueWorkerConfig } from '@flue/vite';`,
+			`import { flue } from '@flue/vite';`,
 			`import { defineConfig } from 'vite';`,
 			``,
 			`export default defineConfig({`,
-			`\tplugins: [flue(), cloudflare({ config: flueWorkerConfig() })],`,
+			`\tplugins: [flue(), cloudflare()],`,
 			`});`,
 			``,
 		].join('\n');
@@ -237,12 +237,17 @@ function renderCloudflareEntry(): string {
 
 function renderCloudflareConfig(opts: InitPlanOptions): string {
 	return [
-		`import flue from '@flue/vite/cloudflare/config';`,
+		`import flue from '@flue/vite/cloudflare';`,
 		`import { defineConfig } from 'cf/config';`,
+		``,
+		`const workerName = '${projectNameFrom(opts.targetDir)}';`,
 		``,
 		`export default defineConfig({`,
 		`	worker: {`,
-		`		name: '${projectNameFrom(opts.targetDir)}',`,
+		`		name: workerName,`,
+		`		entrypoint: flue.entrypoint,`,
+		`		compatibilityFlags: ['nodejs_compat'],`,
+		`		env: { ...flue.bindings(workerName) },`,
 		`		compatibilityDate: '2026-06-01',`,
 		`		observability: { traces: { enabled: true } },`,
 		`		exports: { ...flue.exports },`,

@@ -12,6 +12,11 @@ describe('deployment scaffolds', () => {
 		});
 		const config = files.find((file) => file.relPath === 'cloudflare.config.ts');
 		expect(config?.content).toContain('...flue.exports');
+		expect(config?.content).toContain('entrypoint: flue.entrypoint');
+		expect(config?.content).toContain('...flue.bindings(workerName)');
+		expect(files.find((file) => file.relPath === 'vite.config.ts')?.content).toContain(
+			'cloudflare()',
+		);
 		expect(files.some((file) => file.relPath.startsWith('wrangler.'))).toBe(false);
 		const manifestFile = files.find((file) => file.relPath === 'package.json');
 		if (!manifestFile) throw new Error('Missing scaffold manifest');
@@ -20,11 +25,12 @@ describe('deployment scaffolds', () => {
 			scripts: Record<string, string>;
 		};
 		expect(manifest.devDependencies.cf).toBe('1.0.0-beta.14');
-		expect(manifest.devDependencies['@cloudflare/vite-plugin']).toBe('2.0.0-beta.sha-91c870c02');
+		expect(manifest.devDependencies['@cloudflare/vite-plugin']).toBe('beta');
 		expect(manifest.devDependencies['@flue/vite']).toBe('3.0.0-beta.0');
 		expect(manifest.devDependencies.wrangler).toBeUndefined();
 		expect(manifest.scripts.deploy).toBe('cf deploy');
-		expect(files.find((file) => file.relPath === '.gitignore')?.content).toContain('.cloudflare/');
+		const ignored = files.find((file) => file.relPath === '.gitignore')?.content.split('\n');
+		expect(ignored).toEqual(expect.arrayContaining(['.cloudflare/', '.dev.vars', '.env']));
 	});
 
 	it('keeps Node deployment free of Cloudflare dependencies', () => {

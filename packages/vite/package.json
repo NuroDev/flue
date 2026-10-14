@@ -18,9 +18,9 @@
 			"types": "./dist/internal.d.mts",
 			"import": "./dist/internal.mjs"
 		},
-		"./cloudflare/config": {
-			"types": "./dist/cloudflare/config.d.mts",
-			"import": "./dist/cloudflare/config.mjs"
+		"./cloudflare": {
+			"types": "./dist/cloudflare.d.mts",
+			"import": "./dist/cloudflare.mjs"
 		}
 	},
 	"main": "./dist/index.mjs",
@@ -34,9 +34,9 @@
 	"scripts": {
 		"build": "tsdown",
 		"check:types": "tsc --noEmit",
-		"test": "vitest run",
-		"test:integration:cloudflare": "vitest run --config vitest.integration.cloudflare.config.ts --no-file-parallelism",
-		"test:watch": "vitest"
+		"test": "vitest run --project unit",
+		"test:integration:cloudflare": "vitest run --project cloudflare",
+		"test:watch": "vitest --project unit"
 	},
 	"dependencies": {
 		"@flue/runtime": "workspace:*",
@@ -50,7 +50,7 @@
 		"vite": "^8.0.0"
 	},
 	"devDependencies": {
-		"@cloudflare/vite-plugin": "2.0.0-beta.sha-91c870c02",
+		"@cloudflare/vite-plugin": "beta",
 		"@earendil-works/pi-ai": "^0.87.1",
 		"cf": "1.0.0-beta.14",
 		"hono": "^4.12.32",

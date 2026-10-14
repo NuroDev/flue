@@ -35,8 +35,7 @@
 			"ignoreDependencies": ["@hono/node-server"]
 		},
 		"packages/vite": {
-			"ignoreDependencies": ["@earendil-works/pi-ai"],
-			"entry": ["src/**/*.test.ts", "tests/**/*.test.ts", "vitest*.config.ts"]
+			"ignoreDependencies": ["@earendil-works/pi-ai"]
 		}
 	}
 }

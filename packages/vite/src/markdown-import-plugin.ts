@@ -38,7 +38,6 @@ const EXCLUDED_DIRECTORIES = new Set([
 	'.cache',
 	'.cloudflare',
 	'.turbo',
-	'.wrangler',
 	'dist',
 	'node_modules',
 ]);

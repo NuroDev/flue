@@ -283,6 +283,11 @@ export async function scanAgents(options: ScanAgentsOptions): Promise<AgentScanR
 	return collectScanResults(filePaths, scans);
 }
 
+/**
+ * Synchronously discover agents for Cloudflare config resource getters.
+ * Shares directive parsing, identity validation, and ordering with scanAgents,
+ * without executing agent modules or returning a promise from object spreads.
+ */
 export function scanAgentsSync(options: ScanAgentsOptions): AgentScanResult[] {
 	const patterns =
 		options.agents === undefined
