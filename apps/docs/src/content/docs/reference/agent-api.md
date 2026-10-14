@@ -697,7 +697,7 @@ interface McpConnection {
 
 Connects to the remote MCP server described by an [`McpConnectionDefinition`](#mcpconnectiondefinition) — the same object `defineMcpConnection(...)` returns and `useMcpConnection(...)` mounts — and adapts its listed tools into ordinary Flue [`ToolDefinition`](#definetool) values, ready to mount with [`useTool()`](/docs/reference/agent-hooks-api/#usetool). This is the low-level function underneath `useMcpConnection()` — use it when trusted application code should own the connection and work with the tool definitions directly; declare the hook otherwise.
 
-The function is async, so caller-owned connections are typically made at module scope with top-level `await` — **Node target only**: Cloudflare Workers prohibit network I/O in global scope, and a Worker whose module graph connects at top level fails to boot (the violation does not surface under `vite dev`, only at `wrangler dev`/deploy). On Cloudflare, use `useMcpConnection()`.
+The function is async, so caller-owned connections are typically made at module scope with top-level `await` — **Node target only**: Cloudflare Workers prohibit network I/O in global scope, and a Worker whose module graph connects at top level fails to boot (workerd rejects the violation in Cloudflare development and deployment). On Cloudflare, use `useMcpConnection()`.
 
 Definition fields are documented at [`McpConnectionDefinition`](#mcpconnectiondefinition). Connection contract:
 

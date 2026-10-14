@@ -1,7 +1,7 @@
 ---
 title: Observability
 description: Observe agent activity through the runtime event stream — model turns, tool calls, logs, and token usage — and export it to your observability stack.
-lastReviewedAt: 2026-07-21
+lastReviewedAt: 2026-10-09
 ---
 
 Flue emits everything its agents do — model turns, tool calls, structured logs, compactions, and settlements — as typed **runtime events** your application can observe in process. This surface is separate from the per-conversation message stream a chat UI reads, which belongs to [Routing](/docs/guide/routing/) and the [Flue Agent SDK](/docs/sdk/overview/). This guide covers the two surfaces and when to use each, subscribing with `observe()`, what the event stream contains, token usage and provider diagnostics on model turns, tool activity and logs, exporting telemetry to Sentry, Braintrust, and OpenTelemetry, and how agent activity surfaces in Cloudflare's platform observability.
@@ -176,7 +176,7 @@ Choose Sentry when you want failures, logs, and traces in an existing applicatio
 
 ## Cloudflare
 
-On the [Cloudflare target](/docs/guide/cloudflare-target/), agent work is also visible to the platform's own observability products, with no Flue-side wiring. Each agent response runs as one unit of platform work — admission answers immediately, then the response executes start-to-settlement as a single invocation the platform can see and measure. [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/) attribute tool and hook logs to the response that wrote them, and [Workers Traces](https://developers.cloudflare.com/workers/observability/traces/) capture one trace per response — model calls and other subrequests appear as spans inside it. Both are enabled in `wrangler.jsonc`; see [Deploy on Cloudflare](/docs/ecosystem/deploy/cloudflare/#observability) for configuration and the [Cloudflare target guide](/docs/guide/cloudflare-target/#durable-agent-execution) for the execution model behind the attribution.
+On the [Cloudflare target](/docs/guide/cloudflare-target/), agent work is also visible to the platform's own observability products, with no Flue-side wiring. Each agent response runs as one unit of platform work — admission answers immediately, then the response executes start-to-settlement as a single invocation the platform can see and measure. [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/) attribute tool and hook logs to the response that wrote them, and [Workers Traces](https://developers.cloudflare.com/workers/observability/traces/) capture one trace per response — model calls and other subrequests appear as spans inside it. Both are enabled in `cloudflare.config.ts`; see [Deploy on Cloudflare](/docs/ecosystem/deploy/cloudflare/#observability) for configuration and the [Cloudflare target guide](/docs/guide/cloudflare-target/#durable-agent-execution) for the execution model behind the attribution.
 
 Agent-shaped spans are built in — with traces enabled, every response's trace carries them, no wiring needed. To customize the adapter (content policy, redaction), install it yourself once at `app.ts` module scope, which replaces the default:
 

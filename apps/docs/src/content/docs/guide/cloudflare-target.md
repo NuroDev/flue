@@ -1,7 +1,7 @@
 ---
 title: Cloudflare
 description: Understand the Cloudflare-specific runtime behavior and APIs for Flue applications.
-lastReviewedAt: 2026-07-21
+lastReviewedAt: 2026-10-09
 ---
 
 The Cloudflare target builds your agents for the Cloudflare platform. Each agent runs inside its own Durable Object class, using the Agents SDK, Workers AI, Cloudflare Sandbox, Cloudflare Shell, and other Worker primitives where appropriate. Durable Objects give each agent conversation its own persistent state, durable execution, and global addressability out of the box.
@@ -10,88 +10,84 @@ The build is owned by Vite: `flue()` plus the official `@cloudflare/vite-plugin`
 
 ## Generated Durable Objects
 
-Flue generates a Durable Object class and a Wrangler binding for each agent found by the [`'use agent'` scan](/docs/guide/building-agents/#use-agent-directive) — one per exported agent function, so a module with several agents produces several classes. Both derive from the agent's identity — the exported function's name, or its [`agentName` static override](/docs/guide/building-agents/#use-agent-directive):
+Flue generates a Durable Object class and a Cloudflare binding for each agent found by the [`'use agent'` scan](/docs/guide/building-agents/#use-agent-directive) — one per exported agent function, so a module with several agents produces several classes. Both derive from the agent's identity — the exported function's name, or its [`agentName` static override](/docs/guide/building-agents/#use-agent-directive):
 
 ```txt
 export function SupportChat() {…}   ->  FlueSupportChatAgent
                                         env.FLUE_SUPPORT_CHAT_AGENT
 ```
 
-Camel boundaries split in the binding name, so `SupportChat` yields `FLUE_SUPPORT_CHAT_AGENT` (never `FLUE_SUPPORTCHAT_AGENT`); a kebab-case `agentName` like `support-chat` generates the same pair. The class name is how Cloudflare identifies the Durable Object in migrations. The binding is how your application code accesses the Durable Object namespace at runtime through `env`. Because both come from the identity, renaming the agent function is a storage-identity change unless `agentName` pins the identity — renaming the file changes nothing; see [Managing migrations](#managing-migrations).
+Camel boundaries split in the binding name, so `SupportChat` yields `FLUE_SUPPORT_CHAT_AGENT` (never `FLUE_SUPPORTCHAT_AGENT`); a kebab-case `agentName` like `support-chat` generates the same pair. The class name is how Cloudflare identifies the Durable Object in deployment configuration. The binding is how your application code accesses the Durable Object namespace at runtime through `env`. Because both come from the identity, renaming the agent function is a storage-identity change unless `agentName` pins the identity — renaming the file changes nothing; see [Managing migrations](#managing-migrations).
 
 Canonical agent conversation streams, immutable attachments, and accepted submissions are stored in the owning Durable Object's SQLite storage automatically. The Cloudflare target does not use `db.ts`; a source-root `db.ts` is rejected at build time.
 
-Do not hand-author Flue's generated `FLUE_*` bindings in `wrangler.jsonc`. Declare migrations for generated classes, and declare bindings only for application-owned resources such as your own Durable Objects, R2 buckets, Queues, Hyperdrive configs, Browser Rendering bindings, or Send Email bindings.
+Spread `flue.bindings(workerName)` into `worker.env` and `flue.exports` into `worker.exports` in `cloudflare.config.ts`. Add your application-owned Durable Objects, R2 buckets, Queues, Hyperdrive configs, Browser Rendering bindings, or Send Email bindings alongside them.
 
-## `wrangler.jsonc`
+## `cloudflare.config.ts`
 
-Your project's `wrangler.jsonc` at the project root configures your Worker's name, compatibility settings, and Durable Object migrations. Flue reads this file, merges its contributions (`main` and the per-agent Durable Object bindings) into a generated `.flue-vite.wrangler.jsonc` that the Cloudflare Vite plugin consumes, and never modifies your authored file. Add `.flue-vite/` and `.flue-vite.wrangler.jsonc` to `.gitignore`.
+The Flue beta uses `cf` and `@cloudflare/vite-plugin@beta`. Wrangler config files are no longer supported. Use Node.js 22.19 or newer and author `cloudflare.config.ts` at the project root. See Cloudflare's [configuration reference](https://developers.cloudflare.com/cf/projects/cloudflare-config/) for resource builders and mode-based configuration.
 
-Flue generates the Durable Object classes and bindings, but your `wrangler.jsonc` must declare two things:
+```ts title="cloudflare.config.ts"
+import flue from '@flue/vite/cloudflare';
+import { defineConfig } from 'cf/config';
 
-1. **`nodejs_compat`** in `compatibility_flags`, because Flue's runtime uses Node.js APIs.
-2. **Durable Object migrations** that list every generated class. Cloudflare requires an explicit migration whenever a Worker adds, renames, or removes a Durable Object class.
+const workerName = 'my-flue-worker';
 
-```jsonc
-{
-  "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "my-flue-worker",
-  "compatibility_date": "2026-06-01",
-  "compatibility_flags": ["nodejs_compat"],
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_sqlite_classes": ["FlueSupportChatAgent"],
-    },
-  ],
-}
+export default defineConfig({
+  worker: {
+    name: workerName,
+    entrypoint: flue.entrypoint,
+    env: { ...flue.bindings(workerName) },
+    compatibilityDate: '2026-06-01',
+    compatibilityFlags: ['nodejs_compat'],
+    exports: { ...flue.exports },
+  },
+});
 ```
+
+Import `flue` from `@flue/vite/cloudflare` and spread `flue.exports` into `worker.exports`. It discovers the same agent modules and identities as the Vite plugin, without executing agent code, and declares their SQLite Durable Object exports automatically. Adding an agent requires its function and, for HTTP access, its route in `app.ts`.
+
+Set `worker.entrypoint` to `flue.entrypoint` and spread `flue.bindings(workerName)` into `worker.env`, passing the same name as `worker.name`. Declare `nodejs_compat` in `compatibilityFlags` and set `compatibilityDate` to `2026-04-01` or newer. Keep application resources and Durable Object lifecycle changes in your config.
+
+For a custom Worker entry, set `worker.entrypoint` to a path or import it with `with { type: 'cf-worker' }`. That module must re-export the generated Flue classes and default handler:
+
+```ts title="src/index.ts"
+export { default } from 'virtual:flue/worker';
+export * from 'virtual:flue/worker';
+```
+
+The default resource import resolves the project from `process.cwd()`. For a different project root, use `const flue = await createFlueResources(import.meta.dirname)` with the named import from the same module. Resource keys are discovered at runtime; TypeScript cannot infer a literal union of generated class names from the filesystem.
 
 ### Managing migrations
 
-Migration history stays user-authored — Flue never writes it, because it is an ordered, append-only record of your deployments. Adding an agent is always a triple: the exported agent function in a `'use agent'` module, the mount in `app.ts` (unless dispatch-only), and a new migration entry with a unique tag:
+`cf` expresses Durable Object lifecycle changes in `worker.exports` instead of Wrangler migration tags. The automatic import declares current agents as SQLite Durable Objects. Keep explicit lifecycle declarations for previously deployed classes after the spread.
 
-```jsonc
-{
-  "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["FlueSupportChatAgent"] },
-    { "tag": "v2", "new_sqlite_classes": ["FlueTriageAgent"] },
-  ],
-}
+When removing a deployed agent, retain its old class with `state: 'deleted'`:
+
+```ts
+exports: {
+  ...flue.exports,
+  FlueTriageAgent: exports.durableObject({ state: 'deleted' }),
+},
 ```
 
-Never rewrite or reorder deployed migration entries. Generated agent classes require Durable Object SQLite, so introduce them through `new_sqlite_classes`, not legacy `new_classes`. Use Cloudflare's `renamed_classes` and `deleted_classes` migration fields when changing deployed class names or removing classes.
+When changing an agent's identity from `SupportChat` to `SupportAssistant`, retain the old class and name its destination:
 
-For example, if you remove an agent that was previously deployed, append a `deleted_classes` migration so Cloudflare knows the class is no longer exported. Without this entry, Wrangler will fail because the migration history references a class that the Worker no longer provides:
-
-```jsonc
-{
-  "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["FlueSupportChatAgent", "FlueTriageAgent"] },
-    { "tag": "v2", "deleted_classes": ["FlueTriageAgent"] },
-  ],
-}
+```ts
+exports: {
+  ...flue.exports,
+  FlueSupportChatAgent: exports.durableObject({
+    state: 'renamed',
+    renamedTo: 'FlueSupportAssistantAgent',
+  }),
+},
 ```
 
-Similarly, use `renamed_classes` when a deployed class changes its name — which for Flue agents means the agent's **identity** changed: the function was renamed, or its `agentName` pin was edited:
-
-```jsonc
-{
-  "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["FlueSupportChatAgent"] },
-    {
-      "tag": "v2",
-      "renamed_classes": [{ "from": "FlueSupportChatAgent", "to": "FlueSupportAssistantAgent" }],
-    },
-  ],
-}
-```
-
-Renaming preserves the class's stored conversations under the new name. Re-mounting an agent at a different URL in `app.ts`, by contrast, needs no migration at all — the mount path is not part of the storage identity.
+Both examples use `exports` imported from `cf/config`. Keep deployed lifecycle declarations until Cloudflare's migration process allows removing them. Pin `agentName` to preserve the identity when renaming a function. Moving a file or changing its route does not change the Durable Object identity.
 
 ## Local development
 
-`vite dev` runs your Worker in workerd via the Cloudflare plugin, with the same permissive dev CORS defaults as the Node target (Vite's middleware stack applies them before workerd sees the request). Flue keeps the generated inputs fresh: agent-set changes (adding or removing a `'use agent'` file, or an agent export within one) and authored `wrangler.jsonc` edits regenerate the entry and merged config, and the Cloudflare plugin picks them up. Writes are content-aware — editing an agent's body regenerates nothing, so there are no restart loops. `vite preview` and deployment come from the Cloudflare plugin; see [Deploy Agents on Cloudflare](/docs/ecosystem/deploy/cloudflare/).
+`vite dev` runs your Worker in workerd via the Cloudflare plugin, with the same permissive dev CORS defaults as the Node target (Vite's middleware stack applies them before workerd sees the request). Flue keeps the generated inputs fresh: agent-set changes (adding or removing a `'use agent'` file, or an agent export within one) and authored `cloudflare.config.ts` edits refresh the entry and resources, and the Cloudflare plugin picks them up. Writes are content-aware — editing an agent's body regenerates nothing, so there are no restart loops. `vite preview` and deployment come from the Cloudflare plugin; see [Deploy Agents on Cloudflare](/docs/ecosystem/deploy/cloudflare/).
 
 The plugin registers agents but mounts no routes. Your [`app.ts`](/docs/guide/routing/) remains the route map.
 
@@ -111,7 +107,7 @@ Accepted work runs inside the Durable Object itself, as one platform-visible uni
 
 - **Platform observability sees agent work.** Workers Logs, Workers Traces, and invocation-wrapping integrations (the Sentry `wrap` pattern in [Extending Agents](#extending-agents-on-cloudflare)) attribute the whole response to the one invocation that ran it. [`createCloudflareTracing()`](#createcloudflaretracing) (installed by default) adds agent-level spans to those traces. See [Observability](/docs/guide/observability/#cloudflare) for the two views and [Deploy on Cloudflare](/docs/ecosystem/deploy/cloudflare/#observability) for enabling them.
 - **Scheduled callbacks wait for a running response.** A Durable Object runs one alarm at a time, so `schedule()`/`scheduleEvery()` callbacks that come due mid-response fire after it settles — delivery is durable; timeliness is not guaranteed while the agent is busy. `queue()` is not alarm-driven and is unaffected. Steering is also unaffected: a message that arrives mid-response still joins it at the next turn boundary.
-- **CPU limits are per invocation.** Agent responses are I/O-bound and sit far below the default 30-second active-CPU limit; raise [`limits.cpu_ms`](https://developers.cloudflare.com/durable-objects/platform/limits/) in `wrangler.jsonc` if an agent computes heavily.
+- **CPU limits are per invocation.** Agent responses are I/O-bound and sit far below the default 30-second active-CPU limit; raise [`limits.cpuMs`](https://developers.cloudflare.com/durable-objects/platform/limits/) in `cloudflare.config.ts` if an agent computes heavily.
 
 When a Durable Object resumes after interruption, Flue decides what to do next from the stored input and canonical conversation progress. It requeues only when it can prove the input was not applied, recognizes already-completed output, and records an interruption instead of blindly repeating uncertain model or tool work.
 
@@ -172,7 +168,7 @@ To customize the gateway, disable it, or target a named gateway, re-register the
 
 ## Cloudflare Sandbox
 
-[Cloudflare Sandbox](https://developers.cloudflare.com/containers/) provides container-backed Linux environments for agents that need tools such as git, package installation, native binaries, or a real filesystem. Export the sandbox Durable Object class from `cloudflare.ts`, declare its binding and container image in `wrangler.jsonc`, then wrap the RPC stub returned by `getSandbox(...)` with `cloudflareSandbox(...)`:
+[Cloudflare Sandbox](https://developers.cloudflare.com/containers/) provides container-backed Linux environments for agents that need tools such as git, package installation, native binaries, or a real filesystem. Export the sandbox Durable Object class from `cloudflare.ts`, declare its binding and container image in `cloudflare.config.ts`, then wrap the RPC stub returned by `getSandbox(...)` with `cloudflareSandbox(...)`:
 
 ```ts
 'use agent';
@@ -261,7 +257,7 @@ Any **named export** from this file becomes a top-level Worker export. This is h
 import { DurableObject } from 'cloudflare:workers';
 
 // This class becomes a Worker export. Declare its binding and
-// migration in wrangler.jsonc so Cloudflare knows about it.
+// migration in cloudflare.config.ts so Cloudflare knows about it.
 export class SalesforceAuthCache extends DurableObject {
   async refreshIfNeeded() {
     return await this.ctx.storage.get('token');
@@ -269,7 +265,7 @@ export class SalesforceAuthCache extends DurableObject {
 }
 ```
 
-After exporting the class, declare its Durable Object binding and migration in `wrangler.jsonc`. Your agents can then access it through `env.SALESFORCE_AUTH_CACHE`.
+After exporting the class, declare its Durable Object binding and migration in `cloudflare.config.ts`. Your agents can then access it through `env.SALESFORCE_AUTH_CACHE`.
 
 The **default export** may contribute non-HTTP Worker handlers. For example, a `scheduled` handler that runs on a cron trigger:
 
@@ -338,7 +334,7 @@ Returns the generated Durable Object identity for the current agent context. Onl
 
 The returned `FlueDurableObjectIdentity` includes:
 
-- `bindingName` -- the Wrangler binding name, such as `"FLUE_SUPPORT_CHAT_AGENT"`.
+- `bindingName` -- the Cloudflare binding name, such as `"FLUE_SUPPORT_CHAT_AGENT"`.
 - `className` -- the generated class name, such as `"FlueSupportChatAgent"`.
 - `name` -- the instance name passed to `idFromName` or `getAgentByName`.
 - `id` -- the Durable Object ID as a string.
@@ -373,7 +369,7 @@ Each agent response's trace carries agent-level spans nested under the invocatio
 
 Span names and attributes follow the OpenTelemetry GenAI conventions that Cloudflare's own agent tracing emits, so Flue agents read natively in the Traces dashboard; Flue-specific keys live under `flue.*`.
 
-**Content is on by default** — the opt-in on this target is enabling Workers Traces on the account, in `wrangler.jsonc` or from the dashboard. Pass `content: false` for content-free spans, or a `transform` to apply policy in code:
+**Content is on by default** — the opt-in on this target is enabling Workers Traces on the account, in `cloudflare.config.ts` or from the dashboard. Pass `content: false` for content-free spans, or a `transform` to apply policy in code:
 
 ```ts title="src/app.ts"
 instrument(
@@ -392,4 +388,4 @@ The transform runs on a detached copy; returning `undefined` omits that content,
 
 Two exclusions hold regardless of policy: raw error messages and stack traces never ship on this backend — a failed span records only a low-cardinality `error.type`, and aborted work is marked `flue.canceled` rather than counted as an error — and caller-origin shell (`bash`) operations stay content-free.
 
-The adapter records nothing when traces are disabled in `wrangler.jsonc`, when the invocation is unsampled, or on runtimes that predate the Workers custom-spans API, so leaving it installed costs effectively nothing. `instrument()` returns a dispose function, but nothing on Cloudflare needs to call it: the isolate's lifetime is the disposal.
+The adapter records nothing when traces are disabled in `cloudflare.config.ts`, when the invocation is unsampled, or on runtimes that predate the Workers custom-spans API, so leaving it installed costs effectively nothing. `instrument()` returns a dispose function, but nothing on Cloudflare needs to call it: the isolate's lifetime is the disposal.

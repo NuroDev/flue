@@ -20,7 +20,7 @@ This guide maps old code onto new APIs; it does not teach the new APIs. Read [Ag
 
 The current release stores Flue schema **version 8**; the beta stored version 5. Pre-1.0 persisted schemas are **reset-only** — the runtime rejects an older database before any application code runs, and there is no in-place migration.
 
-- If beta conversation state is disposable, plan a drained deployment: retire the old agents (on Cloudflare, with `deleted_classes` migrations) and create fresh ones. Application data that shares an agent's storage (a `base`/`wrap` DO extension, values written beside Flue's tables) is deleted with it — export anything you need first.
+- If beta conversation state is disposable, plan a drained deployment: retire the old agents (on Cloudflare, with deleted export declarations) and create fresh ones. Application data that shares an agent's storage (a `base`/`wrap` DO extension, values written beside Flue's tables) is deleted with it — export anything you need first.
 - If beta state must survive, export it through the beta application _before_ upgrading, and re-seed after.
 
 Everything else in this guide can be staged; this one is a hard boundary.
@@ -43,7 +43,7 @@ export default defineConfig({
 - `flue build` — now `vite build`; on Node, then `node dist/server.mjs` as before.
 - Target selection via `--target` — now auto-detected from the plugin array, or set `target` in `flue.config.ts`.
 
-Update `package.json` scripts and every CI pipeline that builds the project. On Cloudflare the plugin generates two inputs the Cloudflare plugin consumes — `.flue-vite/` (the Worker entry) and `.flue-vite.wrangler.jsonc` (your authored `wrangler.jsonc` merged with generated bindings). Add both to `.gitignore`.
+Update `package.json` scripts and every CI pipeline that builds the project. The current Cloudflare beta uses `cloudflare.config.ts`, the automatic resource import, and the beta Cloudflare Vite plugin. Ignore `.cloudflare/`. See [Cloudflare beta migration](#cloudflare-beta-migration).
 
 If you have a `flue.config.ts`, two changes:
 
@@ -305,12 +305,12 @@ Messages remain Flue-owned parts-based values; new part kinds (`data-*` from `us
 
 ## Cloudflare deployments
 
-- **`FlueRegistry` is gone.** The beta's deployment-wide registry DO indexed workflow runs; nothing replaces it. Append a `deleted_classes` migration for it, and for every `Flue<Name>Workflow` class.
-- Generated classes are per-agent only: `export function Triage()` → class `FlueTriageAgent`, binding `FLUE_TRIAGE_AGENT` (one class per agent function; a file can carry several). Migration history stays user-authored — adding an agent is always the triple: the exported agent function in a `'use agent'` module, the mount (unless dispatch-only), and a `new_sqlite_classes` entry. Renames use `renamed_classes` — but remember the [schema reset](#before-you-start-persisted-state-resets): a beta-era database is rejected even under a renamed class, so beta agents are usually retired (`deleted_classes`) in favor of fresh identities.
-- Your authored `wrangler.jsonc` is never modified; the build merges it into the generated, gitignored `.flue-vite.wrangler.jsonc`, and `vite build` writes the finalized config into `dist/` with a deploy redirect — deploy with plain `wrangler deploy` from the project root, no `--config` flag.
+- **`FlueRegistry` is gone.** The beta's deployment-wide registry DO indexed workflow runs; nothing replaces it. Retain `state: 'deleted'` export declarations for it and every `Flue<Name>Workflow` class.
+- Generated classes are per-agent only: `export function Triage()` → class `FlueTriageAgent`, binding `FLUE_TRIAGE_AGENT` (one class per agent function; a file can carry several). The current beta discovers agent resources automatically through `flue.exports`. Keep explicit rename and deletion declarations for deployed identities. Remember the [schema reset](#before-you-start-persisted-state-resets): a beta-era database is rejected even under a renamed class, so older agents are usually retired in favor of fresh identities.
+- The current beta preserves your authored `cloudflare.config.ts` and deploys Vite output through `cf deploy`.
 - `cloudflare.ts` moved from `.flue/cloudflare.ts` to `src/cloudflare.ts`. The generated entry exports every agent class plus your `app.ts` fetch handler; application-owned exports (your own DOs, Workflows, the `scheduled` handler) come from `cloudflare.ts`, and scheduled work starts with `dispatch()`, not `invoke()`.
-- Update `run_worker_first` from the beta's `["/api/*", "/_flue/*"]` to cover your actual mounts, for example `["/api/*", "/agents/*", "/channels/*"]`.
-- The minimum `compatibility_date` is `2026-04-01`, validated at build.
+- Update `worker.assets.runWorkerFirst` from the beta's `["/api/*", "/_flue/*"]` to cover your actual mounts, for example `["/api/*", "/agents/*", "/channels/*"]`.
+- Set `compatibilityDate` to `2026-04-01` or newer and include `nodejs_compat` in `compatibilityFlags`.
 
 ## CLI
 
@@ -329,6 +329,17 @@ flue run src/agents/support.ts --message "Handle ticket 42." --id ticket-42
 - New: `--uid`/`--new` send conditions and `--json` (result envelope). Stdout is the reply only; logs go to stderr.
 - `flue run` never loads `app.ts` — register providers in the agent module if you rely on `setProvider()` at app startup.
 
+## Cloudflare beta migration
+
+The new Flue beta replaces Wrangler integration with `cf` and `@cloudflare/vite-plugin@beta`. Node-targeted projects keep their Vite configuration.
+
+1. Install `@flue/runtime@beta`, `@flue/vite@beta`, `@cloudflare/vite-plugin@beta`, and `cf@1.0.0-beta.14`. Remove Wrangler from Flue application dependencies.
+2. Replace `wrangler.jsonc` or `wrangler.toml` with `cloudflare.config.ts`. Use `defineConfig` from `cf/config`, camelCase fields, typed `bindings` in `worker.env`, and resource declarations in `worker.exports`.
+3. Import `flue` from `@flue/vite/cloudflare` and spread `flue.exports` into `worker.exports`. It discovers agents automatically. Preserve deployed class renames and deletions as explicit lifecycle declarations after the spread. See [Managing migrations](/docs/guide/cloudflare-target/#managing-migrations).
+4. Set `worker.entrypoint` to `flue.entrypoint`, spread `flue.bindings(workerName)` into `worker.env`, and declare `compatibilityFlags: ['nodejs_compat']`. Use `plugins: [flue(), cloudflare()]` in Vite. Remove old generated Wrangler config paths from scripts and ignore `.cloudflare/`.
+5. Run `cf auth login`, `cf dev`, and `cf deploy --dry-run`. Replace Wrangler deploy commands with `cf deploy`; use `--secrets-file` for deployment secrets.
+6. If your Cloudflare Vite config has a separate filename, build it explicitly and run `cf deploy --prebuilt --mode production`.
+
 ## Migration checklist
 
 1. **Pins.** Replace `@flue/*@1.0.0-beta.x` with the current versions; add `vite`, `@flue/vite`, `hono`, and (Cloudflare) `@cloudflare/vite-plugin`. Drop beta-era patches and vendored builds — re-verify each patched behavior against the new runtime before porting anything.
@@ -342,5 +353,5 @@ flue run src/agents/support.ts --message "Handle ticket 42." --id ticket-42
 9. **Providers.** Replace `registerProvider()`/`registerApiProvider()` calls with Pi's `createProvider()` + `setProvider()` (add `@earendil-works/pi-ai` to your dependencies); replace the Cloudflare binding registration with `cloudflareBindingProvider()` from `@flue/runtime/cloudflare/workers-ai`; optionally narrow the shipped providers with `flue({ providers: [...] })` (name `'cloudflare'` to keep Workers AI).
 10. **Observability.** Migrate `run_*` handling to `agent_start`/`agent_end`/`submission_settled` and the `instanceId`/`submissionId` correlation fields.
 11. **Clients.** Move SDK and React usage to conversation-scoped clients and `useFlueAgent({ url | client })`.
-12. **Deployment.** Append `deleted_classes` for `FlueRegistry` and workflow classes; add `new_sqlite_classes` for new agents; plan the drained deployment for the schema reset.
-13. **Verify.** Typecheck, tests, a production `vite build`, and a check of the built artifact (exports, merged wrangler config) before deploying.
+12. **Deployment.** Retain deleted export declarations for `FlueRegistry` and workflow classes; spread `flue.exports` for current agents; plan the drained deployment for the schema reset.
+13. **Verify.** Typecheck, tests, a production `vite build`, and a check of the built artifact (exports, merged Cloudflare config) before deploying.

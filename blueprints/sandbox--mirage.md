@@ -303,8 +303,7 @@ export function mirage(
 Pick the runtime package that matches the user's Flue build target. If
 you can't tell which target they're on, check `vite.config.ts` for the
 `cloudflare()` plugin alongside `flue()`, check `flue.config.ts` for
-`target: 'cloudflare'`, and look for a `wrangler.jsonc` (or `.toml` /
-`.json`) at the project root. If still unclear, ask.
+`target: 'cloudflare'`, and look for a `cloudflare.config.ts` at the project root. If still unclear, ask.
 
 For the Node target:
 

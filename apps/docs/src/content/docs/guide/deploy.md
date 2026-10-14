@@ -1,7 +1,7 @@
 ---
 title: Deploy
 description: Build your Flue application into a deployable artifact and ship it to the Node.js or Cloudflare target.
-lastReviewedAt: 2026-07-21
+lastReviewedAt: 2026-10-09
 ---
 
 Flue was designed to work with [Vite](https://vite.dev/). `vite dev` serves the application during development, `vite build` produces the deployable artifact, and shipping that artifact works like shipping any other Vite application to your hosting platform of choice.
@@ -69,27 +69,33 @@ For runtime details — state and durability, process ownership, multi-replica r
 
 ## Deploy on Cloudflare
 
-On Cloudflare, `flue()` cooperates with the official `@cloudflare/vite-plugin`, which owns workerd dev, build output, preview, and deploy. `flue()` must come **before** `cloudflare()` in the plugins array; the wrong order is diagnosed with an error. Flue's job is generating the Worker inputs the Cloudflare plugin consumes: a Worker entry that registers your scanned agents and exports one Durable Object class per agent, plus your authored `wrangler.jsonc` merged with the generated bindings. Add both generated paths to `.gitignore`:
+The Flue beta pairs with `@cloudflare/vite-plugin@beta` and the `cf` CLI. `flue()` must come before `cloudflare()` in `vite.config.ts`. The Cloudflare plugin owns workerd development, build output, and preview.
 
-```gitignore
-.flue-vite/
-.flue-vite.wrangler.jsonc
+```ts title="cloudflare.config.ts"
+import flue from '@flue/vite/cloudflare';
+import { defineConfig } from 'cf/config';
+
+const workerName = 'my-flue-worker';
+
+export default defineConfig({
+  worker: {
+    name: workerName,
+    entrypoint: flue.entrypoint,
+    env: { ...flue.bindings(workerName) },
+    compatibilityDate: '2026-06-01',
+    compatibilityFlags: ['nodejs_compat'],
+    exports: { ...flue.exports },
+  },
+});
 ```
 
-Two things stay yours to author in `wrangler.jsonc`: the `nodejs_compat` compatibility flag, and the **Durable Object migrations** — an append-only record of your deployments that Flue never writes. Every deployed agent needs a migration entry for its generated class, so adding an agent is always a triple: the agent, its mount in `app.ts` (skip for dispatch-only agents), and a new migration tag:
+Import `flue` from `@flue/vite/cloudflare` and spread `flue.exports` into `worker.exports`. It discovers the same agent modules and identities as the Vite plugin, without executing agent code, and declares their SQLite Durable Object exports automatically. Adding an agent requires its function and, for HTTP access, its route in `app.ts`.
 
-```jsonc title="wrangler.jsonc"
-{
-  "name": "my-flue-worker",
-  "compatibility_date": "2026-06-01",
-  "compatibility_flags": ["nodejs_compat"],
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["FlueTriageAgent"] }],
-}
-```
+Set `worker.entrypoint` to `flue.entrypoint` and spread `flue.bindings(workerName)` into `worker.env`, passing the same name as `worker.name`. Declare `nodejs_compat` in `compatibilityFlags` and set `compatibilityDate` to `2026-04-01` or newer. Keep application resources and Durable Object lifecycle changes in your config.
 
-Renaming or removing a deployed agent is a storage migration too (`renamed_classes` / `deleted_classes`) — read [Managing migrations](/docs/guide/cloudflare-target/#managing-migrations) before changing anything already deployed.
+Ignore `.cloudflare/`. Run `cf dev` locally, `cf build` to build, and `cf deploy --dry-run` to validate before `cf deploy`. Deployment builds the Vite project automatically. For an alternate Vite config, build it explicitly and deploy with `cf deploy --prebuilt --mode production`.
 
-Build and deploy through the Cloudflare plugin: `vite build`, then deploy against the config it emits into `dist/`. For the full walkthrough, see [Deploy Agents on Cloudflare](/docs/ecosystem/deploy/cloudflare/); for runtime behavior — generated classes and bindings, durable execution, service bindings — see the [Cloudflare target guide](/docs/guide/cloudflare-target/).
+Read [Managing migrations](/docs/guide/cloudflare-target/#managing-migrations) before renaming or removing deployed agents. For setup, secrets, and container resources, see [Deploy Agents on Cloudflare](/docs/ecosystem/deploy/cloudflare/).
 
 ## Next steps
 

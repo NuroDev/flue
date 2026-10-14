@@ -41,7 +41,7 @@ Braintrust convention:
 Never invent or commit an API key. Update an existing `.env.example`,
 environment type, or deployment documentation when the project maintains one,
 but preserve its secret-management conventions. For Cloudflare deployment,
-store `BRAINTRUST_API_KEY` as a Worker secret rather than a Wrangler `vars`
+store `BRAINTRUST_API_KEY` as a Worker secret rather than an inline `bindings.text()`
 value. Flue's required `nodejs_compat` mode makes environment values available
 through `process.env` in both targets.
 

@@ -1,7 +1,7 @@
 ---
 title: Braintrust
 description: Trace Flue agent operations, model turns, tools, tasks, and compactions in Braintrust.
-lastReviewedAt: 2026-07-21
+lastReviewedAt: 2026-10-09
 ---
 
 ## Quickstart
@@ -44,7 +44,7 @@ Once configured, agent operations appear as traces with nested spans for model t
 | `BRAINTRUST_API_KEY`      | **Required for trace export** — Authenticates trace export to Braintrust.               |
 | `BRAINTRUST_PROJECT_NAME` | **Optional** — Chooses the Braintrust project that receives traces. Defaults to `Flue`. |
 
-Never commit the API key; on Cloudflare, store it as a Worker secret rather than a Wrangler `vars` value. When the key is absent, the integration does not initialize or subscribe and the application continues without trace export.
+Never commit the API key; on Cloudflare, store it as a Worker secret rather than an inline `bindings.text()` value. When the key is absent, the integration does not initialize or subscribe and the application continues without trace export.
 
 The blueprint installs Braintrust 3.17 and registers its public Flue observer through `observe(...)`. The same source builds on Node.js and Cloudflare through Braintrust's `workerd` export; no separate Cloudflare package or Durable Object wrapper is needed.
 

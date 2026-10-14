@@ -534,10 +534,10 @@ if the user also wants HTTP request instrumentation for `app.ts`, research and
 add Sentry's current Workers or Hono middleware separately.
 
 Configure `SENTRY_DSN` through a Worker secret or environment binding according
-to the project's policy. For local Wrangler development, follow the existing
+to the project's policy. For local Cloudflare development, follow the existing
 `.dev.vars` or `.env` convention. Keep the DSN outside application source so it
 can be rotated or disabled without a code change. Environment, release, and
-sample-rate values may be Wrangler `vars`.
+sample-rate values may use `bindings.text()` in `worker.env`.
 
 ## Verify
 
