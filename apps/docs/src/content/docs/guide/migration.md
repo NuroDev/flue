@@ -31,11 +31,11 @@ Everything else in this guide can be staged; this one is a hard boundary.
 
 ```ts title="vite.config.ts"
 import { cloudflare } from '@cloudflare/vite-plugin'; // Cloudflare target only
-import { flue, flueWorkerConfig } from '@flue/vite';
+import { flue } from '@flue/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  plugins: [flue(), cloudflare({ config: flueWorkerConfig() })],
+  plugins: [flue(), cloudflare()],
 });
 ```
 
@@ -310,7 +310,7 @@ Messages remain Flue-owned parts-based values; new part kinds (`data-*` from `us
 - The current beta preserves your authored `cloudflare.config.ts` and deploys Vite output through `cf deploy`.
 - `cloudflare.ts` moved from `.flue/cloudflare.ts` to `src/cloudflare.ts`. The generated entry exports every agent class plus your `app.ts` fetch handler; application-owned exports (your own DOs, Workflows, the `scheduled` handler) come from `cloudflare.ts`, and scheduled work starts with `dispatch()`, not `invoke()`.
 - Update `worker.assets.runWorkerFirst` from the beta's `["/api/*", "/_flue/*"]` to cover your actual mounts, for example `["/api/*", "/agents/*", "/channels/*"]`.
-- The minimum `compatibilityDate` is `2026-04-01`, validated at build.
+- Set `compatibilityDate` to `2026-04-01` or newer and include `nodejs_compat` in `compatibilityFlags`.
 
 ## CLI
 
@@ -335,8 +335,8 @@ The new Flue beta replaces Wrangler integration with `cf` and `@cloudflare/vite-
 
 1. Install `@flue/runtime@beta`, `@flue/vite@beta`, `@cloudflare/vite-plugin@beta`, and `cf@1.0.0-beta.14`. Remove Wrangler from Flue application dependencies.
 2. Replace `wrangler.jsonc` or `wrangler.toml` with `cloudflare.config.ts`. Use `defineConfig` from `cf/config`, camelCase fields, typed `bindings` in `worker.env`, and resource declarations in `worker.exports`.
-3. Import `flue` from `@flue/vite/cloudflare/config` and spread `flue.exports` into `worker.exports`. It discovers agents automatically. Preserve deployed class renames and deletions as explicit lifecycle declarations after the spread. See [Managing migrations](/docs/guide/cloudflare-target/#managing-migrations).
-4. Pass `flueWorkerConfig()` to `cloudflare({ config: ... })` after `flue()`. Remove old generated Wrangler config paths from scripts and ignore `.cloudflare/`.
+3. Import `flue` from `@flue/vite/cloudflare` and spread `flue.exports` into `worker.exports`. It discovers agents automatically. Preserve deployed class renames and deletions as explicit lifecycle declarations after the spread. See [Managing migrations](/docs/guide/cloudflare-target/#managing-migrations).
+4. Set `worker.entrypoint` to `flue.entrypoint`, spread `flue.bindings(workerName)` into `worker.env`, and declare `compatibilityFlags: ['nodejs_compat']`. Use `plugins: [flue(), cloudflare()]` in Vite. Remove old generated Wrangler config paths from scripts and ignore `.cloudflare/`.
 5. Run `cf auth login`, `cf dev`, and `cf deploy --dry-run`. Replace Wrangler deploy commands with `cf deploy`; use `--secrets-file` for deployment secrets.
 6. If your Cloudflare Vite config has a separate filename, build it explicitly and run `cf deploy --prebuilt --mode production`.
 

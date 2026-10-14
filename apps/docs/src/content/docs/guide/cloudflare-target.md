@@ -21,28 +21,33 @@ Camel boundaries split in the binding name, so `SupportChat` yields `FLUE_SUPPOR
 
 Canonical agent conversation streams, immutable attachments, and accepted submissions are stored in the owning Durable Object's SQLite storage automatically. The Cloudflare target does not use `db.ts`; a source-root `db.ts` is rejected at build time.
 
-Do not hand-author Flue's generated `FLUE_*` bindings in `cloudflare.config.ts`. Spread `flue.exports` for generated classes, and declare bindings only for application-owned resources such as your own Durable Objects, R2 buckets, Queues, Hyperdrive configs, Browser Rendering bindings, or Send Email bindings.
+Spread `flue.bindings(workerName)` into `worker.env` and `flue.exports` into `worker.exports` in `cloudflare.config.ts`. Add your application-owned Durable Objects, R2 buckets, Queues, Hyperdrive configs, Browser Rendering bindings, or Send Email bindings alongside them.
 
 ## `cloudflare.config.ts`
 
 The Flue beta uses `cf` and `@cloudflare/vite-plugin@beta`. Wrangler config files are no longer supported. Use Node.js 22.19 or newer and author `cloudflare.config.ts` at the project root. See Cloudflare's [configuration reference](https://developers.cloudflare.com/cf/projects/cloudflare-config/) for resource builders and mode-based configuration.
 
 ```ts title="cloudflare.config.ts"
-import flue from '@flue/vite/cloudflare/config';
+import flue from '@flue/vite/cloudflare';
 import { defineConfig } from 'cf/config';
+
+const workerName = 'my-flue-worker';
 
 export default defineConfig({
   worker: {
-    name: 'my-flue-worker',
+    name: workerName,
+    entrypoint: flue.entrypoint,
+    env: { ...flue.bindings(workerName) },
     compatibilityDate: '2026-06-01',
+    compatibilityFlags: ['nodejs_compat'],
     exports: { ...flue.exports },
   },
 });
 ```
 
-Import `flue` from `@flue/vite/cloudflare/config` and spread `flue.exports` into `worker.exports`. It discovers the same agent modules and identities as the Vite plugin, without executing agent code, and declares their SQLite Durable Object exports automatically. Adding an agent requires its function and, for HTTP access, its route in `app.ts`.
+Import `flue` from `@flue/vite/cloudflare` and spread `flue.exports` into `worker.exports`. It discovers the same agent modules and identities as the Vite plugin, without executing agent code, and declares their SQLite Durable Object exports automatically. Adding an agent requires its function and, for HTTP access, its route in `app.ts`.
 
-Flue supplies `nodejs_compat`, the generated entrypoint, and the `FLUE_*_AGENT` bindings through `flueWorkerConfig()`. Set `compatibilityDate` to `2026-04-01` or newer. Application resources and Durable Object lifecycle changes stay in your config.
+Set `worker.entrypoint` to `flue.entrypoint` and spread `flue.bindings(workerName)` into `worker.env`, passing the same name as `worker.name`. Declare `nodejs_compat` in `compatibilityFlags` and set `compatibilityDate` to `2026-04-01` or newer. Keep application resources and Durable Object lifecycle changes in your config.
 
 For a custom Worker entry, set `worker.entrypoint` to a path or import it with `with { type: 'cf-worker' }`. That module must re-export the generated Flue classes and default handler:
 

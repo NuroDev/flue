@@ -389,16 +389,20 @@ and must configure a Worker Loader binding plus the `experimental`
 compatibility flag. Ensure `cloudflare.config.ts` contains:
 
 ```ts
-import flue from '@flue/vite/cloudflare/config';
+import flue from '@flue/vite/cloudflare';
 import { bindings, defineConfig } from 'cf/config';
+
+const workerName = 'my-flue-worker';
 
 export default defineConfig({
   worker: {
-    name: 'my-flue-worker',
+    name: workerName,
+    entrypoint: flue.entrypoint,
     exports: { ...flue.exports },
     compatibilityDate: '2026-10-01',
     compatibilityFlags: ['nodejs_compat', 'experimental'],
     env: {
+      ...flue.bindings(workerName),
       LOADER: bindings.workerLoader(),
     },
   },

@@ -74,14 +74,19 @@ A runnable version of this pattern is available in [`examples/node-schedules`](h
 On the Cloudflare target, the Worker is not a long-lived process, so the platform owns the trigger. Declare the cadence as a [Cron Trigger](https://developers.cloudflare.com/workers/configuration/cron-triggers/) in `cloudflare.config.ts`:
 
 ```ts title="cloudflare.config.ts"
-import flue from '@flue/vite/cloudflare/config';
+import flue from '@flue/vite/cloudflare';
 import { defineConfig, triggers } from 'cf/config';
+
+const workerName = 'my-flue-worker';
 
 export default defineConfig({
   worker: {
-    name: 'my-flue-worker',
+    name: workerName,
+    entrypoint: flue.entrypoint,
+    env: { ...flue.bindings(workerName) },
     exports: { ...flue.exports },
     compatibilityDate: '2026-10-01',
+    compatibilityFlags: ['nodejs_compat'],
     triggers: [
       triggers.scheduled({
         schedule: '0 9 * * *',

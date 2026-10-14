@@ -69,24 +69,29 @@ For runtime details — state and durability, process ownership, multi-replica r
 
 ## Deploy on Cloudflare
 
-The Flue beta pairs with `@cloudflare/vite-plugin@beta` and the `cf` CLI. `flue()` must come before `cloudflare({ config: flueWorkerConfig() })` in `vite.config.ts`. The Cloudflare plugin owns workerd development, build output, and preview.
+The Flue beta pairs with `@cloudflare/vite-plugin@beta` and the `cf` CLI. `flue()` must come before `cloudflare()` in `vite.config.ts`. The Cloudflare plugin owns workerd development, build output, and preview.
 
 ```ts title="cloudflare.config.ts"
-import flue from '@flue/vite/cloudflare/config';
+import flue from '@flue/vite/cloudflare';
 import { defineConfig } from 'cf/config';
+
+const workerName = 'my-flue-worker';
 
 export default defineConfig({
   worker: {
-    name: 'my-flue-worker',
+    name: workerName,
+    entrypoint: flue.entrypoint,
+    env: { ...flue.bindings(workerName) },
     compatibilityDate: '2026-06-01',
+    compatibilityFlags: ['nodejs_compat'],
     exports: { ...flue.exports },
   },
 });
 ```
 
-Import `flue` from `@flue/vite/cloudflare/config` and spread `flue.exports` into `worker.exports`. It discovers the same agent modules and identities as the Vite plugin, without executing agent code, and declares their SQLite Durable Object exports automatically. Adding an agent requires its function and, for HTTP access, its route in `app.ts`.
+Import `flue` from `@flue/vite/cloudflare` and spread `flue.exports` into `worker.exports`. It discovers the same agent modules and identities as the Vite plugin, without executing agent code, and declares their SQLite Durable Object exports automatically. Adding an agent requires its function and, for HTTP access, its route in `app.ts`.
 
-Flue supplies `nodejs_compat`, the generated entrypoint, and the `FLUE_*_AGENT` bindings through `flueWorkerConfig()`. Set `compatibilityDate` to `2026-04-01` or newer. Application resources and Durable Object lifecycle changes stay in your config.
+Set `worker.entrypoint` to `flue.entrypoint` and spread `flue.bindings(workerName)` into `worker.env`, passing the same name as `worker.name`. Declare `nodejs_compat` in `compatibilityFlags` and set `compatibilityDate` to `2026-04-01` or newer. Keep application resources and Durable Object lifecycle changes in your config.
 
 Ignore `.cloudflare/`. Run `cf dev` locally, `cf build` to build, and `cf deploy --dry-run` to validate before `cf deploy`. Deployment builds the Vite project automatically. For an alternate Vite config, build it explicitly and deploy with `cf deploy --prebuilt --mode production`.
 

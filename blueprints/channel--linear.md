@@ -23,8 +23,8 @@ Install `@flue/linear` and `@linear/sdk@^86.0.0`. Flue owns verified ingress.
 The project owns the official SDK client and every outbound tool.
 
 The current official SDK is used by Linear's own Cloudflare Workers agent
-example with `nodejs_compat`. Flue's Cloudflare target supplies that
-compatibility flag. Keep a workerd fake-transport test for every SDK operation
+example with `nodejs_compat`. Include that compatibility flag in the Worker's
+`cloudflare.config.ts`. Keep a workerd fake-transport test for every SDK operation
 the project relies on.
 
 Install `valibot` using the project's existing dependency conventions.

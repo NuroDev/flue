@@ -95,7 +95,7 @@ The short version, for your reference:
    `cloudflare.config.ts` at the project root:
 
    ```ts
-   import flue from '@flue/vite/cloudflare/config';
+   import flue from '@flue/vite/cloudflare';
    import { bindings, defineConfig, defineContainer, exports } from 'cf/config';
 
    const sandbox = defineContainer({
@@ -103,13 +103,18 @@ The short version, for your reference:
      image: { dockerfile: './Dockerfile' },
    });
 
+   const workerName = 'my-flue-worker';
+
    export default defineConfig({
      worker: {
-       name: 'my-flue-worker',
+       name: workerName,
+       entrypoint: flue.entrypoint,
        compatibilityDate: '2026-06-01',
+       compatibilityFlags: ['nodejs_compat'],
        env: {
+         ...flue.bindings(workerName),
          Sandbox: bindings.durableObject({
-           worker: 'my-flue-worker',
+           worker: workerName,
            exportName: 'Sandbox',
          }),
        },
@@ -123,8 +128,8 @@ The short version, for your reference:
    ```
 
    Merge these resources into the user's existing config. Preserve deployed
-   rename and deletion declarations after `...flue.exports`. Flue's entrypoint,
-   bindings, and flags are supplied by `flueWorkerConfig()`.
+   rename and deletion declarations after `...flue.exports`. Declare
+   `flue.entrypoint`, `flue.bindings(workerName)`, and `nodejs_compat` as shown above.
 
 4. Add a `Dockerfile` at the project root pinned to the matching
    `@cloudflare/sandbox` version:
@@ -190,8 +195,8 @@ Durable Object, which only exists inside a Cloudflare Worker. To use it,
 the entire Flue project has to change its deploy target from Node to
 Cloudflare Workers, which is a substantial migration that includes:
 
-- Adding `cloudflare({ config: flueWorkerConfig() })` (the plugin from
-  `@cloudflare/vite-plugin`, the customizer from `@flue/vite`) to
+- Adding `cloudflare()` (the plugin from
+  `@cloudflare/vite-plugin`) to
   `vite.config.ts` after `flue()` — that plugin's presence is what selects
   the Cloudflare target; dev and build stay `vite dev` / `vite build`.
 - Adding `cf` and `@cloudflare/vite-plugin@beta` as dev dependencies.

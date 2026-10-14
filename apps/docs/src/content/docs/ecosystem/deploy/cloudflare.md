@@ -8,7 +8,7 @@ Build and deploy Flue agents on Cloudflare Workers. This guide walks you through
 
 By the end, you will have a Flue agent running on Cloudflare Workers, and you will know how to add subagents, R2-backed context, Cloudflare sandboxes, and Durable Object-backed sessions.
 
-On Cloudflare, Flue is two Vite plugins side by side: `flue()` from `@flue/vite` plus the official `@cloudflare/vite-plugin`. `flue()` scans your `'use agent'` modules, generates the Worker entry (one Durable Object class per agent), and contributes its entrypoint and bindings to the parsed Cloudflare config; the Cloudflare plugin owns workerd dev and the deployable Worker output.
+On Cloudflare, Flue is two Vite plugins side by side: `flue()` from `@flue/vite` plus the official `@cloudflare/vite-plugin`. `flue()` scans your `'use agent'` modules and generates the Worker entry (one Durable Object class per agent). Your `cloudflare.config.ts` imports its entrypoint and resources; the Cloudflare plugin owns workerd dev and the deployable Worker output.
 
 ## Hello World
 
@@ -27,15 +27,12 @@ Flue builds on `agents`, Cloudflare's Agents SDK — it uses the SDK's Durable O
 
 ```ts title="vite.config.ts"
 import { cloudflare } from '@cloudflare/vite-plugin';
-import { flue, flueWorkerConfig } from '@flue/vite';
+import { flue } from '@flue/vite';
 import { defineConfig } from 'vite';
 
-// flue() must come before cloudflare(): it prepares the generated Worker
-// entry before the Cloudflare plugin resolves its configuration.
-// Pass flueWorkerConfig() to cloudflare() so the plugin picks up that
-// generated Worker entry and per-agent Durable Object bindings.
+// flue() discovers agents before the Cloudflare config reads their resources.
 export default defineConfig({
-  plugins: [flue(), cloudflare({ config: flueWorkerConfig() })],
+  plugins: [flue(), cloudflare()],
 });
 ```
 
@@ -92,21 +89,26 @@ The mount path is yours to choose; the exported function's name (the agent's dur
 The beta requires `cloudflare.config.ts`; Wrangler configs are no longer supported.
 
 ```ts title="cloudflare.config.ts"
-import flue from '@flue/vite/cloudflare/config';
+import flue from '@flue/vite/cloudflare';
 import { defineConfig } from 'cf/config';
+
+const workerName = 'my-flue-worker';
 
 export default defineConfig({
   worker: {
-    name: 'my-flue-worker',
+    name: workerName,
+    entrypoint: flue.entrypoint,
+    env: { ...flue.bindings(workerName) },
     compatibilityDate: '2026-06-01',
+    compatibilityFlags: ['nodejs_compat'],
     exports: { ...flue.exports },
   },
 });
 ```
 
-Import `flue` from `@flue/vite/cloudflare/config` and spread `flue.exports` into `worker.exports`. It discovers the same agent modules and identities as the Vite plugin, without executing agent code, and declares their SQLite Durable Object exports automatically. Adding an agent requires its function and, for HTTP access, its route in `app.ts`.
+Import `flue` from `@flue/vite/cloudflare` and spread `flue.exports` into `worker.exports`. It discovers the same agent modules and identities as the Vite plugin, without executing agent code, and declares their SQLite Durable Object exports automatically. Adding an agent requires its function and, for HTTP access, its route in `app.ts`.
 
-Flue supplies `nodejs_compat`, the generated entrypoint, and the `FLUE_*_AGENT` bindings through `flueWorkerConfig()`. Set `compatibilityDate` to `2026-04-01` or newer. Application resources and Durable Object lifecycle changes stay in your config.
+Set `worker.entrypoint` to `flue.entrypoint` and spread `flue.bindings(workerName)` into `worker.env`, passing the same name as `worker.name`. Declare `nodejs_compat` in `compatibilityFlags` and set `compatibilityDate` to `2026-04-01` or newer. Keep application resources and Durable Object lifecycle changes in your config.
 
 For example, `Translator` produces `FlueTranslatorAgent` and `FLUE_TRANSLATOR_AGENT`. Renaming a deployed agent's identity or removing it requires an explicit lifecycle declaration. See [Managing migrations](/docs/guide/cloudflare-target/#managing-migrations).
 
@@ -136,7 +138,7 @@ For CI or a managed deployment pipeline, `cf deploy --secrets-file <path>` is al
 
 ### 6. Try it locally
 
-`vite dev` runs the Worker in local workerd through the official Cloudflare Vite integration, with Flue's generated entry and config:
+`vite dev` runs the Worker in local workerd through the official Cloudflare Vite integration, with Flue's generated entry and your authored config:
 
 ```bash
 npx cf dev
@@ -172,26 +174,31 @@ npx cf deploy
 
 For projects with a separate `vite.config.cloudflare.ts`, run `vite build --config vite.config.cloudflare.ts` first, then `cf deploy --prebuilt --mode production`. `cf deploy` does not select an alternate Vite config from your package scripts.
 
-Flue contributes the generated entrypoint and per-agent bindings through the config customizer. It preserves the authored `cloudflare.config.ts` and its export lifecycle declarations. Conflicting reserved `FLUE_*_AGENT` bindings fail the build.
+Declare the generated entrypoint and resources through the Flue helper in your authored config. Keep the generated `FLUE_*_AGENT` bindings pointing at their corresponding agent classes.
 
 ### Serving assets from the same Worker
 
 Workers static assets are served before your Worker script unless `worker.assets.runWorkerFirst` says otherwise. If a single Worker serves a front-end build and application routes that invoke Flue, include every application-owned API prefix — including every prefix where `app.ts` mounts agents or channels — in `runWorkerFirst` so those requests reach Hono instead of the asset handler or SPA fallback:
 
 ```ts title="cloudflare.config.ts"
-import flue from '@flue/vite/cloudflare/config';
+import flue from '@flue/vite/cloudflare';
 import { bindings, defineConfig } from 'cf/config';
+
+const workerName = 'my-flue-worker';
 
 export default defineConfig({
   worker: {
-    name: 'my-flue-worker',
+    name: workerName,
+    entrypoint: flue.entrypoint,
     exports: { ...flue.exports },
     compatibilityDate: '2026-10-01',
+    compatibilityFlags: ['nodejs_compat'],
     assets: {
       notFoundHandling: 'single-page-application',
       runWorkerFirst: ['/api/*', '/agents/*', '/channels/*'],
     },
     env: {
+      ...flue.bindings(workerName),
       ASSETS: bindings.assets(),
     },
   },
@@ -259,16 +266,21 @@ export class SalesforceAuthCache extends DurableObject {
 Declare the corresponding binding and export declaration in your project-root `cloudflare.config.ts`:
 
 ```ts
-import flue from '@flue/vite/cloudflare/config';
+import flue from '@flue/vite/cloudflare';
 import { bindings, defineConfig, exports } from 'cf/config';
+
+const workerName = 'my-flue-worker';
 
 export default defineConfig({
   worker: {
-    name: 'my-flue-worker',
+    name: workerName,
+    entrypoint: flue.entrypoint,
     compatibilityDate: '2026-10-01',
+    compatibilityFlags: ['nodejs_compat'],
     env: {
+      ...flue.bindings(workerName),
       SALESFORCE_AUTH_CACHE: bindings.durableObject({
-        worker: 'my-flue-worker',
+        worker: workerName,
         exportName: 'SalesforceAuthCache',
       }),
     },
@@ -385,7 +397,7 @@ export { Sandbox } from '@cloudflare/sandbox';
 `cloudflare.config.ts` (at the project root, alongside `package.json`):
 
 ```ts
-import flue from '@flue/vite/cloudflare/config';
+import flue from '@flue/vite/cloudflare';
 import { bindings, defineConfig, defineContainer, exports } from 'cf/config';
 
 const sandbox = defineContainer({
@@ -395,14 +407,18 @@ const sandbox = defineContainer({
   },
 });
 
+const workerName = 'my-agent';
+
 export default defineConfig({
   worker: {
-    name: 'my-agent',
+    name: workerName,
+    entrypoint: flue.entrypoint,
     compatibilityDate: '2026-06-01',
     compatibilityFlags: ['nodejs_compat'],
     env: {
+      ...flue.bindings(workerName),
       Sandbox: bindings.durableObject({
-        worker: 'my-agent',
+        worker: workerName,
         exportName: 'Sandbox',
       }),
     },
@@ -455,7 +471,7 @@ export { Sandbox as NodeSandbox } from '@cloudflare/sandbox';
 ```
 
 ```ts
-import flue from '@flue/vite/cloudflare/config';
+import flue from '@flue/vite/cloudflare';
 import { bindings, defineConfig, defineContainer, exports } from 'cf/config';
 
 const sandbox1 = defineContainer({
@@ -472,17 +488,22 @@ const sandbox2 = defineContainer({
   },
 });
 
+const workerName = 'my-flue-worker';
+
 export default defineConfig({
   worker: {
-    name: 'my-flue-worker',
+    name: workerName,
+    entrypoint: flue.entrypoint,
     compatibilityDate: '2026-10-01',
+    compatibilityFlags: ['nodejs_compat'],
     env: {
+      ...flue.bindings(workerName),
       PyBox: bindings.durableObject({
-        worker: 'my-flue-worker',
+        worker: workerName,
         exportName: 'PyBoxSandbox',
       }),
       NodeBox: bindings.durableObject({
-        worker: 'my-flue-worker',
+        worker: workerName,
         exportName: 'NodeSandbox',
       }),
     },
@@ -635,14 +656,19 @@ Start simple. Move up when you need to.
 Enable Cloudflare's observability products for the deployed Worker in `cloudflare.config.ts`:
 
 ```ts title="cloudflare.config.ts"
-import flue from '@flue/vite/cloudflare/config';
+import flue from '@flue/vite/cloudflare';
 import { defineConfig } from 'cf/config';
+
+const workerName = 'my-flue-worker';
 
 export default defineConfig({
   worker: {
-    name: 'my-flue-worker',
+    name: workerName,
+    entrypoint: flue.entrypoint,
+    env: { ...flue.bindings(workerName) },
     exports: { ...flue.exports },
     compatibilityDate: '2026-10-01',
+    compatibilityFlags: ['nodejs_compat'],
     observability: {
       enabled: true,
       traces: {

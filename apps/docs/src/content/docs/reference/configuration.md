@@ -187,9 +187,9 @@ The effective target is decided in this order:
 Cloudflare wiring is validated at config-resolution time; each failure is a distinct error:
 
 - `target: 'cloudflare'` without `@cloudflare/vite-plugin` in the plugin array.
-- `cloudflare()` listed before `flue()` — `flue()` must precede it, because the sibling's config resolution invokes Flue's [worker-config customizer](#flueworkerconfig) and needs the completed project resolution and agent scan.
+- `cloudflare()` listed before `flue()`: Flue's project resolution and agent scan must finish before the Cloudflare config reads its [resources](#cloudflare-resources).
 - The Cloudflare plugin present but not visible to `flue()` as a plain `plugins` entry (wrapped in a Promise, or injected by another plugin).
-- `cloudflare()` invoked without `config: flueWorkerConfig()`, leaving the sibling without Flue's Worker entry and Durable Object bindings.
+- A missing `cloudflare.config.ts` at the project root.
 
 ### Vite configuration set by the plugin
 
@@ -216,7 +216,7 @@ The plugin serves six virtual modules; they are resolvable only inside module gr
 - `virtual:flue/agents` — the scanned `'use agent'` module set.
 - `virtual:flue/providers` — provider registration generated from [`providers`](#providers) (or the all-built-ins default).
 - `virtual:flue/server` — the Node server bootstrap.
-- `virtual:flue/worker` — the generated Cloudflare Worker entry (the default `worker.entrypoint`; one Durable Object class per agent).
+- `virtual:flue/worker`: the generated Cloudflare Worker entry, exposed as `flue.entrypoint` (one Durable Object class per agent).
 
 ### `FlueVitePluginApi`
 
@@ -242,38 +242,38 @@ Exported from `@flue/vite`. The core `flue` plugin exposes `FlueVitePluginApi` o
 - `target` — the effective target after [detection](#target-detection).
 - `agents` — the scanned agent set; live in dev (reflects the latest re-scan).
 
-## `flueWorkerConfig()`
+## Cloudflare resources
 
 ```ts
-import { flue, flueWorkerConfig } from '@flue/vite';
+import flue, { createFlueResources } from '@flue/vite/cloudflare';
 
-function flueWorkerConfig(): FlueWorkerConfigCustomizer;
-
-type FlueWorkerConfigCustomizer = (config: object) => void;
+// Use the default import when the project root is process.cwd().
+// For another root:
+const resources = await createFlueResources(import.meta.dirname);
 ```
 
-Creates the worker-config customizer for the Cloudflare target, passed to the sibling plugin's `config` option:
+The host-side resource helper discovers agent identities without executing agent modules. Spread its resources into [`cloudflare.config.ts`](/docs/guide/cloudflare-target/#cloudflareconfigts):
+
+- `flue.entrypoint`: `virtual:flue/worker`, the generated Worker module. A custom entry must re-export its generated classes and default handler.
+- `flue.bindings(workerName)`: namespace bindings for `worker.env`, pointing at that Worker's generated agent classes. Pass the same name as `worker.name`, including when using mode-specific names.
+- `flue.exports`: SQLite Durable Object declarations for `worker.exports`. Keep explicit rename and deletion declarations after the spread.
+
+The declarations use Cloudflare's public config types. Resource names come from the filesystem, so TypeScript cannot infer their literal keys. During Vite resolution the helper reads the live scan, including inline `flue()` options. Standalone `cf` commands resolve `flue.config.*` and scan the project directly.
+
+Set `compatibilityFlags: ['nodejs_compat']` and a `compatibilityDate` of `2026-04-01` or newer in the authored Worker config. Configure the Vite plugins with Flue first:
 
 ```ts
 // vite.config.ts
 import { cloudflare } from '@cloudflare/vite-plugin';
-import { flue, flueWorkerConfig } from '@flue/vite';
+import { flue } from '@flue/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  plugins: [flue(), cloudflare({ config: flueWorkerConfig() })],
+  plugins: [flue(), cloudflare()],
 });
 ```
 
-`flueWorkerConfig()` must be called after `flue()` in the same Vite config evaluation; calling it first throws `[flue] flueWorkerConfig() was called before flue(). …`. The customizer runs inside the Cloudflare plugin's config resolution, against the resolved config for the selected Vite mode, and contributes the following:
-
-- `entrypoint`: defaults to `virtual:flue/worker`. A custom entry must re-export its generated classes and default handler.
-- One Durable Object binding per agent in `worker.env`. Reserved `FLUE_*_AGENT` names must refer to the generated local class using `type: 'durable-object'`, `worker: config.name`, and `exportName: className`. Conflicting bindings fail the build.
-- Validation that every scanned class has a live SQLite declaration in `worker.exports`. Spread the automatic resource import from `@flue/vite/cloudflare/config`, or declare each class with `exports.durableObject({ storage: 'sqlite' })`.
-- The `nodejs_compat` compatibility flag, unioned into `compatibilityFlags`.
-- Validation of a user-set `compatibilityDate`: it must be `YYYY-MM-DD` and at least `2026-04-01`. An older date is an error, not a silent bump. `cf/config` requires a compatibility date.
-
-Application resources and lifecycle declarations pass through unchanged. The authored file is never rewritten; see [`cloudflare.config.ts`](/docs/guide/cloudflare-target/#cloudflareconfigts). Under `vite preview` the customizer is a no-op (preview serves the already-built Worker output).
+The Cloudflare plugin reads the authored config and owns type generation, workerd, build output, and preview.
 
 ## Resolution by consumer
 
@@ -424,6 +424,6 @@ const PROJECT_ENTRY_EXTENSIONS: readonly string[];
 ## What configuration does not cover
 
 - **Environment variables.** `flue.config.ts` declares no secrets and reads no `.env` mapping; API keys and runtime variables come from the process environment. See [Environment and secrets](/docs/guide/node-target/#environment-and-secrets).
-- **Cloudflare configuration.** Worker name, routes, user bindings, containers, and export lifecycles live in your own `cloudflare.config.ts`; Flue only [contributes](#flueworkerconfig) its derived values at build time.
+- **Cloudflare configuration.** Worker name, routes, bindings, containers, and export lifecycles live in your own `cloudflare.config.ts`; import Flue's generated [resources](#cloudflare-resources) into that config.
 - **Agent behavior.** Models, tools, sandboxes, and durability are configured in agent modules, not in `flue.config.ts`. See [Models](/docs/guide/models/) and [Tools](/docs/guide/tools/).
 - **Vite options.** `flue.config.ts` carries no Vite configuration; server ports, plugins, and build overrides stay in `vite.config.ts`.

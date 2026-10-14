@@ -232,15 +232,20 @@ export function Assistant() {
 Declare the `AI` binding the provider uses in your project's Cloudflare configuration:
 
 ```ts title="cloudflare.config.ts"
-import flue from '@flue/vite/cloudflare/config';
+import flue from '@flue/vite/cloudflare';
 import { bindings, defineConfig } from 'cf/config';
+
+const workerName = 'my-flue-worker';
 
 export default defineConfig({
   worker: {
-    name: 'my-flue-worker',
+    name: workerName,
+    entrypoint: flue.entrypoint,
     exports: { ...flue.exports },
     compatibilityDate: '2026-10-01',
+    compatibilityFlags: ['nodejs_compat'],
     env: {
+      ...flue.bindings(workerName),
       AI: bindings.ai(),
     },
   },
