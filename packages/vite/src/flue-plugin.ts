@@ -14,12 +14,10 @@
  * resolved plugin array, `'node'` otherwise; an explicit `target` overrides
  * detection.
  *
- * On the Cloudflare target, the user wires `cloudflare({ config:
- * flueWorkerConfig() })` and `flue()` must precede `cloudflare()` in the
- * plugin array: the sibling's `config` hook invokes Flue's worker-config
- * customizer (see cloudflare-worker-config.ts), which needs flue's completed
- * project resolution and agent scan. The sibling owns the wrangler config,
- * workerd dev, build output, and preview.
+ * On the Cloudflare target, flue() precedes cloudflare() so the sibling's
+ * config hook can read the completed project resolution and agent scan.
+ * cloudflare.config.ts declares resources from @flue/vite/cloudflare;
+ * the sibling owns workerd, build output, and preview.
  *
  * Virtual modules (resolved only inside graphs this plugin serves):
  *
@@ -27,8 +25,8 @@
  * - `virtual:flue/db`     → the resolved db entry, or a default-adapter stub
  * - `virtual:flue/agents` → the scanned `'use agent'` module set
  * - `virtual:flue/server` → the Node bootstrap (real code in this package)
- * - `virtual:flue/worker` → the generated Cloudflare Worker entry (wrangler
- *   `main`; per-agent Durable Object classes)
+ * - `virtual:flue/worker` → the generated Cloudflare Worker entry (Cloudflare
+ *   `entrypoint`; per-agent Durable Object classes)
  */
 import * as fs from 'node:fs';
 import { builtinModules } from 'node:module';
@@ -58,10 +56,10 @@ import {
 } from './agent-scan.ts';
 import { cloudflareAgentsResolverPlugin } from './cloudflare-agents-resolver.ts';
 import { generateCloudflareEntry } from './cloudflare-entry.ts';
+import { registerFlueResourcesSource } from './cloudflare-resources-state.ts';
 import {
+	CLOUDFLARE_CONFIG_BASENAME,
 	cloudflareOrderingError,
-	type FlueWorkerConfigSource,
-	registerFlueWorkerConfigSource,
 	VIRTUAL_WORKER_ENTRY,
 } from './cloudflare-worker-config.ts';
 import {
@@ -148,9 +146,6 @@ const ENFORCED_DEV_CONFIG_PATHS = ['appType'];
 /** Chrome probes this on every DevTools open; it must never reach user routes. */
 const CHROME_DEVTOOLS_PROBE_PATH = '/.well-known/appspecific/com.chrome.devtools.json';
 
-/** Authored wrangler config basenames the sibling plugin discovers at the root. */
-const AUTHORED_WRANGLER_BASENAMES = ['wrangler.jsonc', 'wrangler.json', 'wrangler.toml'];
-
 /**
  * Dev-server CORS defaults: allow credentialed requests from localhost-family
  * origins only (Vite's own default origin set), and expose the durable-stream
@@ -213,23 +208,6 @@ export function flue(config: FlueConfig = {}): Plugin[] {
 		external: false,
 		importers: undefined,
 	};
-
-	// The link between this flue() instance and a flueWorkerConfig() created
-	// after it in the same vite.config evaluation. The `config` hook keeps
-	// `configReady`/`isPreview` current; the customizer reads the live agent
-	// scan through the getter and reports back via `customizerInvoked`.
-	const workerConfigSource: FlueWorkerConfigSource = {
-		configReady: false,
-		isPreview: false,
-		get doBindings() {
-			return state.agents.map((agent) => ({
-				name: agent.bindingName,
-				class_name: agent.className,
-			}));
-		},
-		customizerInvoked: false,
-	};
-	registerFlueWorkerConfigSource(workerConfigSource);
 
 	// Records import edges on the Node target so wrong-environment failures
 	// (a `cloudflare:*` import reaching the Node graph) can print the chain
@@ -306,9 +284,6 @@ export function flue(config: FlueConfig = {}): Plugin[] {
 			state.isPreview = env.isPreview === true;
 			state.cloudflarePrepared = false;
 			state.pendingWarnings = [];
-			workerConfigSource.configReady = false;
-			workerConfigSource.isPreview = state.isPreview;
-			workerConfigSource.customizerInvoked = false;
 
 			const ambiguityWarning = flueConfigAmbiguityWarning(loaded.configPath);
 			if (ambiguityWarning) state.pendingWarnings.push(ambiguityWarning);
@@ -340,18 +315,21 @@ export function flue(config: FlueConfig = {}): Plugin[] {
 			const isBuild = env.command === 'build';
 
 			if (preliminaryTarget === 'cloudflare') {
-				// The sibling plugin resolves its configuration in ITS `config`
-				// hook — reading the user's wrangler config and invoking Flue's
-				// worker-config customizer — which runs after this one only when
-				// flue() precedes cloudflare() in the plugin array. Diagnose the
-				// wrong order here, before the customizer could run against an
-				// unresolved project.
+				// Resolve the scan before the sibling evaluates cloudflare.config.ts,
+				// including project options supplied inline to flue().
 				if (cloudflarePluginPrecedesFlue(userConfig.plugins, corePlugin)) {
 					throw cloudflareOrderingError();
 				}
+				if (!fs.existsSync(path.join(root, `${CLOUDFLARE_CONFIG_BASENAME}.ts`))) {
+					throw stackless(
+						new Error(
+							'[flue] The Cloudflare beta target requires cloudflare.config.ts. Wrangler configs are no longer supported.',
+						),
+					);
+				}
 				if (project.db) throw dbOnCloudflareError();
 				state.cloudflarePrepared = true;
-				workerConfigSource.configReady = true;
+				registerFlueResourcesSource(root, () => state.agents);
 				// The dependency resolver stays inert (root unset): the Worker
 				// entry is a virtual module resolved against the user's project
 				// root, so its bare imports resolve from the user's node_modules
@@ -468,8 +446,8 @@ export function flue(config: FlueConfig = {}): Plugin[] {
 							"[flue] target is 'cloudflare' but @cloudflare/vite-plugin is not in the Vite plugin array. " +
 								'Install @cloudflare/vite-plugin and add it after flue():\n\n' +
 								"  import { cloudflare } from '@cloudflare/vite-plugin';\n" +
-								"  import { flue, flueWorkerConfig } from '@flue/vite';\n" +
-								'  plugins: [flue(), cloudflare({ config: flueWorkerConfig() })]\n',
+								"  import { flue } from '@flue/vite';\n" +
+								'  plugins: [flue(), cloudflare()]\n',
 						),
 					);
 				}
@@ -491,17 +469,6 @@ export function flue(config: FlueConfig = {}): Plugin[] {
 								'resolved the config, so flue() configured the Node target instead. Add flue() ' +
 								'and cloudflare() as plain entries of the same `plugins` array (not wrapped in ' +
 								'a Promise or added by another plugin), with flue() first.',
-						),
-					);
-				}
-				if (!workerConfigSource.customizerInvoked && !state.isPreview) {
-					throw stackless(
-						new Error(
-							"[flue] The Cloudflare plugin is not receiving Flue's Worker configuration " +
-								'(the generated Worker entry and per-agent Durable Object bindings). Pass ' +
-								"Flue's config customizer to cloudflare():\n\n" +
-								"  import { flue, flueWorkerConfig } from '@flue/vite';\n" +
-								'  plugins: [flue(), cloudflare({ config: flueWorkerConfig() })]\n',
 						),
 					);
 				}
@@ -542,8 +509,8 @@ export function flue(config: FlueConfig = {}): Plugin[] {
 				return generateProvidersModule(state.project?.providers);
 			}
 			if (id === RESOLVED_WORKER_ENTRY) {
-				// The Cloudflare Worker entry. The sibling plugin points wrangler
-				// `main` here (via flueWorkerConfig()) and resolves it through
+				// The Cloudflare Worker entry. The sibling plugin points
+				// `entrypoint` here (via flue.entrypoint) and resolves it through
 				// Vite's plugin pipeline in both dev and build; bare imports in
 				// the generated code resolve against the user's project root.
 				const app = state.project?.app;
@@ -725,17 +692,17 @@ export function flue(config: FlueConfig = {}): Plugin[] {
 
 /**
  * Cloudflare dev supervision. The sibling plugin runs workerd, serves the
- * app, and owns the wrangler config end to end — it watches the user's
- * authored wrangler file (its `configPath`) and restarts itself on edits.
+ * app, and owns the cloudflare.config.ts end to end — it watches the user's
+ * authored cloudflare.config.ts (its `configPath`) and restarts itself on edits.
  * Flue's only dev job is reacting to structural project changes:
  *
  * - A changed agent set (agent file add/remove, directive change, identity
  *   change, module move) or changed entry modules (`app.ts`/`cloudflare.ts`
  *   discovery) restarts the dev server. The restart re-runs flue's `config`
  *   hook (fresh scan) and the sibling's config resolution, which re-invokes
- *   `flueWorkerConfig()` with the new Durable Object bindings and Worker
+ *   the resource helper with the new Durable Object bindings and Worker
  *   entry — the same treatment the sibling gives its own config changes.
- * - An authored wrangler config appearing or disappearing restarts the dev
+ * - An authored cloudflare.config.ts appearing or disappearing restarts the dev
  *   server (the sibling's watcher covers only `change` events on files that
  *   existed at resolution time).
  * - `flue.config.*` changes restart the dev server (project re-resolution).
@@ -809,21 +776,22 @@ function setupCloudflareDevSupervision(options: {
 	const onWatchEvent = (event: string, file: string): void => {
 		if (stopped) return;
 		const filePath = normalizePath(file);
-		// Never react to workerd/wrangler local state (miniflare SQLite and
+		// Never react to workerd/Cloudflare local state (miniflare SQLite and
 		// friends can live under the source root when sourceRoot == root).
-		if (filePath.startsWith(`${normalizedRoot}/.wrangler/`)) return;
+		if (filePath.startsWith(`${normalizedRoot}/.cloudflare/`)) return;
 		if (isFlueConfigPath(filePath, state)) {
 			logger.info('[flue] flue.config changed; restarting the dev server.');
 			requestRestart(server);
 			return;
 		}
-		// An authored wrangler config appearing or disappearing is a
+		// An authored cloudflare.config.ts appearing or disappearing is a
 		// structural change the sibling cannot see: its config watcher covers
 		// only `change` events on files that existed at resolution time.
 		// (Edits to an existing file stay the sibling's job.)
 		if (
 			(event === 'add' || event === 'unlink') &&
-			AUTHORED_WRANGLER_BASENAMES.some((basename) => filePath === `${normalizedRoot}/${basename}`)
+			path.dirname(filePath) === normalizedRoot &&
+			path.basename(filePath).startsWith(`${CLOUDFLARE_CONFIG_BASENAME}.`)
 		) {
 			logger.info(
 				`[flue] ${path.basename(filePath)} was ${event === 'add' ? 'created' : 'removed'}; restarting the dev server.`,

@@ -22,6 +22,8 @@ minimumReleaseAgeExclude:
   # so the gate would tear paired versions apart; the toolchain cadence is the
   # effective gate.
   - wrangler
+  # The beta cf CLI is pinned alongside the Cloudflare Vite beta.
+  - cf
   - workerd
   - miniflare
   - '@ai-sdk/*'
